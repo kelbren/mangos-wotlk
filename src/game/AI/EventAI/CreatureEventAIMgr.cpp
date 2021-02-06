@@ -767,12 +767,12 @@ void CreatureEventAIMgr::LoadCreatureEventAI_Scripts()
                         IsValidTargetType(temp.event_type, action.type, action.summon.target, i, j + 1);
                         break;
                     case ACTION_T_THREAT_SINGLE:
-                        if (std::abs(action.threat_single.value) > 100 && !action.threat_single.isDirect)
+                        if (std::abs(action.threat_single.value) > 101 && !action.threat_single.isDirect)
                             sLog.outErrorEventAI("Event %u Action %u uses invalid percent value %u.", i, j + 1, action.threat_single.value);
                         IsValidTargetType(temp.event_type, action.type, action.threat_single.target, i, j + 1);
                         break;
                     case ACTION_T_THREAT_ALL_PCT:
-                        if (std::abs(action.threat_all_pct.percent) > 100)
+                        if (std::abs(action.threat_all_pct.percent) > 101)
                             sLog.outErrorEventAI("Event %u Action %u uses invalid percent value %u.", i, j + 1, action.threat_all_pct.percent);
                         break;
                     case ACTION_T_QUEST_EVENT:
@@ -1073,6 +1073,17 @@ void CreatureEventAIMgr::LoadCreatureEventAI_Scripts()
                             break;
                         }
                         IsValidTargetType(temp.event_type, action.type, action.setFacing.target, i, j + 1);
+                        break;
+                    case ACTION_T_SET_SPELL_SET:
+                        if (!sObjectMgr.GetCreatureTemplateSpellSet(creature_id, action.spellSet.setId))
+                        {
+                            sLog.outErrorEventAI("Event %u Action %u uses invalid spell set %u. Setting to 0.", i, j + 1, action.spellSet.setId);
+                            action.spellSet.setId = 0;
+                            break;
+                        }
+                        break;
+                    case ACTION_T_SET_IMMOBILIZED_STATE:
+                    case ACTION_T_SET_DESPAWN_AGGREGATION:
                         break;
                     default:
                         sLog.outErrorEventAI("Event %u Action %u have currently not checked at load action type (%u). Need check code update?", i, j + 1, temp.action[j].type);

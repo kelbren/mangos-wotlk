@@ -38,7 +38,7 @@
 // forward declaration (declared in MovementSplineInit.h)
 namespace Movement
 {
-typedef std::vector<G3D::Vector3> PointsArray;
+    typedef std::vector<G3D::Vector3> PointsArray;
 }
 
 template<class T, class P>
@@ -90,12 +90,12 @@ class WaypointMovementGenerator<Creature>
         void GetPathInformation(uint32& pathId, WaypointPathOrigin& wpOrigin) const { pathId = m_pathId; wpOrigin = m_PathOrigin; }
         void GetPathInformation(std::ostringstream& oss) const;
 
-        void AddToWaypointPauseTime(int32 waitTimeDiff);
+        void AddToWaypointPauseTime(int32 waitTimeDiff, bool force = false);
         bool SetNextWaypoint(uint32 pointId);
 
     private:
         void LoadPath(Creature& creature, int32 pathId, WaypointPathOrigin wpOrigin, uint32 overwriteEntry);
-        uint32 BuildIntPath(Movement::PointsArray& path, Creature& creature, G3D::Vector3 const& endPos) const;
+        uint32 BuildIntPath(Movement::PointsArray& path, Creature& creature, G3D::Vector3 const& endPos);
 
         void Stop(int32 time) { i_nextMoveTime.Reset(time); }
         bool Stopped(Creature& u);
@@ -109,7 +109,7 @@ class WaypointMovementGenerator<Creature>
         ShortTimeTracker i_nextMoveTime;
         int32 m_scriptTime;                                 // filled with delay change when script is instantly executed and want to change node delay
         uint32 m_lastReachedWaypoint;
-        WorldLocation m_resetPoint;
+        Position m_resetPoint;
 
         uint32 m_pathId;
         int32 m_pathDuration;

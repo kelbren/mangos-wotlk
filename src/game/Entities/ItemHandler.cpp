@@ -736,7 +736,7 @@ void WorldSession::SendListInventory(ObjectGuid vendorguid) const
     }
 
     // Stop the npc if moving
-    pCreature->StopMoving();
+    pCreature->GetMotionMaster()->PauseWaypoints();
 
     VendorItemData const* vItems = pCreature->GetVendorItems();
     VendorItemData const* tItems = pCreature->GetVendorTemplateItems();
@@ -774,7 +774,7 @@ void WorldSession::SendListInventory(ObjectGuid vendorguid) const
             ItemPrototype const* pProto = ObjectMgr::GetItemPrototype(itemId);
             if (pProto)
             {
-                if (!_player->isGameMaster())
+                if (!_player->IsGameMaster())
                 {
                     // class wrong item skip only for bindable case
                     if ((pProto->AllowableClass & _player->getClassMask()) == 0 && pProto->Bonding == BIND_WHEN_PICKED_UP)
@@ -1165,6 +1165,14 @@ void WorldSession::HandleWrapItemOpcode(WorldPacket& recv_data)
         return;
     }
 
+    // don't allow wrapping while casting - fixes an exploit where you could use
+    // items multiple times by wrapping them during use
+    if (_player->IsNonMeleeSpellCasted(true, false, false))
+    {
+        _player->SendEquipError(EQUIP_ERR_CANT_DO_RIGHT_NOW, item, nullptr);
+        return;
+    }
+
     CharacterDatabase.BeginTransaction();
     CharacterDatabase.PExecute("INSERT INTO character_gifts VALUES ('%u', '%u', '%u', '%u')", item->GetOwnerGuid().GetCounter(), item->GetGUIDLow(), item->GetEntry(), item->GetUInt32Value(ITEM_FIELD_FLAGS));
     item->SetEntry(gift->GetEntry());
@@ -1403,6 +1411,8 @@ void WorldSession::HandleSocketOpcode(WorldPacket& recv_data)
     }
 
     _player->ToggleMetaGemsActive(slot, true);              // turn on all metagems (except for target item)
+
+    itemTarget->SendUpdateSockets();
 }
 
 void WorldSession::HandleCancelTempEnchantmentOpcode(WorldPacket& recv_data)

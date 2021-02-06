@@ -1,6 +1,6 @@
 #ifndef __REVISION_SQL_H__
 #define __REVISION_SQL_H__
- #define REVISION_DB_REALMD "required_14004_01_realmd_banning"
- #define REVISION_DB_CHARACTERS "required_14009_01_characters_new_ticket_system_sql_created"
- #define REVISION_DB_MANGOS "required_14018_01_mangos_gm_mountup_command"
+ #define REVISION_DB_REALMD "required_14028_01_realmd_account_locale_agnostic"
+ #define REVISION_DB_CHARACTERS "required_14030_01_characters_item_instance_duration_default"
+ #define REVISION_DB_MANGOS "required_14032_01_mangos_dbscript_npc_flag_update"
 #endif // __REVISION_SQL_H__

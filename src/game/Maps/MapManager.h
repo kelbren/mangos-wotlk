@@ -27,8 +27,11 @@
 #include "Grids/GridStates.h"
 #include "Maps/MapUpdater.h"
 
+#include <functional>
+
 class Transport;
 class BattleGround;
+struct TransportTemplate;
 
 struct MapID
 {
@@ -134,20 +137,14 @@ class MapManager : public MaNGOS::Singleton<MapManager, MaNGOS::ClassLevelLockab
 
         void LoadTransports();
 
-        typedef std::set<Transport*> TransportSet;
-        TransportSet m_Transports;
-
-        typedef std::map<uint32, TransportSet> TransportMap;
-        TransportMap m_TransportsByMap;
+        typedef std::map<uint32, std::vector<const TransportTemplate*>> TransportMap;
+        TransportMap m_transportsByMap;
+        TransportMap m_transportsByEntry;
 
         void InitializeVisibilityDistanceInfo();
         /* statistics */
         uint32 GetNumInstances();
         uint32 GetNumPlayersInInstances();
-
-        uint32 GetMapUpdateMinTime(uint32 mapId, uint32 instance = 0);
-        uint32 GetMapUpdateMaxTime(uint32 mapId, uint32 instance = 0);
-        uint32 GetMapUpdateAvgTime(uint32 mapId, uint32 instance = 0);
 
         // get list of all maps
         const MapMapType& Maps() const { return i_maps; }
@@ -175,7 +172,7 @@ class MapManager : public MaNGOS::Singleton<MapManager, MaNGOS::ClassLevelLockab
         void DeleteStateMachine();
 
         Map* CreateInstance(uint32 id, Player* player);
-        DungeonMap* CreateDungeonMap(uint32 id, uint32 InstanceId, Difficulty difficulty, DungeonPersistentState* save = nullptr);
+        DungeonMap* CreateDungeonMap(uint32 id, uint32 InstanceId, Difficulty difficulty, DungeonPersistentState* save, Team ownerTeam);
         BattleGroundMap* CreateBattleGroundMap(uint32 id, uint32 InstanceId, BattleGround* bg);
 
         std::mutex m_lock;

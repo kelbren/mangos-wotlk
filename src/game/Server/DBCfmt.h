@@ -20,7 +20,7 @@
 #define MANGOS_DBCSFRM_H
 
 const char Achievementfmt[] = "niixssssssssssssssssxxxxxxxxxxxxxxxxxxiixixxxxxxxxxxxxxxxxxxii";
-const char AchievementCriteriafmt[] = "niiiiiiiissssssssssssssssxixiii";
+const char AchievementCriteriafmt[] = "niiiiiiiissssssssssssssssxiiiii";
 const char AreaTableEntryfmt[] = "iiinixxxxxissssssssssssssssxiiiiixxx";
 const char AreaTriggerEntryfmt[] = "niffffffff";
 const char AuctionHouseEntryfmt[] = "niiixxxxxxxxxxxxxxxxx";
@@ -86,7 +86,7 @@ const char LightEntryfmt[] = "nifffxxxxxxxxxx";
 const char LiquidTypefmt[] = "nxxixixxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
 const char LockEntryfmt[] = "niiiiiiiiiiiiiiiiiiiiiiiixxxxxxxx";
 const char MailTemplateEntryfmt[] = "nxxxxxxxxxxxxxxxxxssssssssssssssssx";
-const char MapEntryfmt[] = "nxixxssssssssssssssssxixxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxixiffxixx";
+const char MapEntryfmt[] = "nxiixssssssssssssssssxixxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxixiffxixx";
 const char MapDifficultyEntryfmt[] = "diixxxxxxxxxxxxxxxxxiix";
 const char MovieEntryfmt[] = "nxx";
 const char OverrideSpellDatafmt[] = "niiiiiiiiiix";
@@ -123,6 +123,8 @@ const char TaxiPathEntryfmt[] = "niii";
 const char TaxiPathNodeEntryfmt[] = "diiifffiiii";
 const char TeamContributionPointsfmt[] = "df";
 const char TotemCategoryEntryfmt[] = "nxxxxxxxxxxxxxxxxxii";
+const char TransportAnimationfmt[] = "niifffx";
+const char TransportRotationfmt[] = "diiffff";
 const char VehicleEntryfmt[] = "niffffiiiiiiiifffffffffffffffssssfifiixx";
 const char VehicleSeatEntryfmt[] = "niiffffffffffiiiiiifffffffiiifffiiiiiiiffiiiiixxxxxxxxxxxx";
 const char WMOAreaTableEntryfmt[] = "niiixxxxxiixxxxxxxxxxxxxxxxx";

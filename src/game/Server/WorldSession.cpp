@@ -46,6 +46,7 @@
 #include <mutex>
 #include <deque>
 #include <cstdarg>
+#include <iostream>
 
 #ifdef BUILD_PLAYERBOT
 #include "PlayerBot/Base/PlayerbotMgr.h"
@@ -93,10 +94,11 @@ bool WorldSessionFilter::Process(WorldPacket const& packet) const
 
 /// WorldSession constructor
 WorldSession::WorldSession(uint32 id, WorldSocket* sock, AccountTypes sec, uint8 expansion, time_t mute_time, LocaleConstant locale) :
-    m_muteTime(mute_time), m_GUIDLow(0), _player(nullptr), m_Socket(sock ? sock->shared<WorldSocket>() : nullptr), _security(sec), _accountId(id), m_expansion(expansion),
+    m_muteTime(mute_time), m_GUIDLow(0), _player(nullptr), m_Socket(sock ? sock->shared<WorldSocket>() : nullptr), _security(sec), _accountId(id), m_expansion(expansion), m_orderCounter(0),
     _logoutTime(0), m_inQueue(false), m_playerLoading(false), m_playerLogout(false), m_playerRecentlyLogout(false), m_playerSave(true),
-    m_sessionDbcLocale(sWorld.GetAvailableDbcLocale(locale)), m_sessionDbLocaleIndex(sObjectMgr.GetIndexForLocale(locale)),
+    m_sessionDbcLocale(sWorld.GetAvailableDbcLocale(locale)), m_sessionDbLocaleIndex(sObjectMgr.GetStorageLocaleIndexFor(locale)),
     m_latency(0), m_clientTimeDelay(0), m_tutorialState(TUTORIALDATA_UNCHANGED), m_sessionState(WORLD_SESSION_STATE_CREATED),
+    m_timeSyncClockDeltaQueue(6), m_timeSyncClockDelta(0), m_pendingTimeSyncRequests(), m_timeSyncNextCounter(0), m_timeSyncTimer(0),
     m_requestSocket(nullptr) {}
 
 /// WorldSession destructor
@@ -140,6 +142,21 @@ void WorldSession::SetOffline()
     m_sessionState = WORLD_SESSION_STATE_OFFLINE;
 }
 
+void WorldSession::SetOnline()
+{
+    if (_player && m_Socket && !m_Socket->IsClosed())
+    {
+        m_sessionState = WORLD_SESSION_STATE_READY;
+        m_kickTime = 0;
+    }
+}
+
+void WorldSession::SetInCharSelection()
+{
+    m_sessionState = WORLD_SESSION_STATE_CHAR_SELECTION;
+    m_kickTime = time(nullptr) + 15 * 60;
+}
+
 bool WorldSession::RequestNewSocket(WorldSocket* socket)
 {
     std::lock_guard<std::mutex> guard(m_recvQueueLock);
@@ -167,7 +184,7 @@ void WorldSession::SetExpansion(uint8 expansion)
 {
     m_expansion = expansion;
     if (_player)
-        _player->OnExpansionChange(expansion);
+        _player->OnExpansionChange();
     SendAuthOk(); // this is a hack but does what we need - resets expansion setting in client
 }
 
@@ -230,8 +247,46 @@ void WorldSession::SendPacket(WorldPacket const& packet) const
 /// Add an incoming packet to the queue
 void WorldSession::QueuePacket(std::unique_ptr<WorldPacket> new_packet)
 {
-    std::lock_guard<std::mutex> guard(m_recvQueueLock);
-    m_recvQueue.push_back(std::move(new_packet));
+    sWorld.IncrementOpcodeCounter(new_packet->GetOpcode());
+    OpcodeHandler const& opHandle = opcodeTable[new_packet->GetOpcode()];
+    if (opHandle.packetProcessing == PROCESS_IMMEDIATE)
+    {
+        (this->*opHandle.handler)(*new_packet);
+        if (new_packet->rpos() < new_packet->wpos() && sLog.HasLogLevelOrHigher(LOG_LVL_DEBUG))
+            LogUnprocessedTail(*new_packet);
+        return;
+    }
+
+    if (opHandle.packetProcessing == PROCESS_MAP_THREAD)
+    {
+        std::lock_guard<std::mutex> guard(m_recvQueueMapLock);
+        m_recvQueueMap.push_back(std::move(new_packet));
+    }
+    else
+    {
+        std::lock_guard<std::mutex> guard(m_recvQueueLock);
+        m_recvQueue.push_back(std::move(new_packet));
+    }
+}
+
+void WorldSession::DeleteMovementPackets()
+{
+    std::lock_guard<std::mutex> guard(m_recvQueueMapLock);
+    for (auto itr = m_recvQueueMap.begin(); itr != m_recvQueueMap.end();)
+    {
+        switch ((*itr)->GetOpcode())
+        {
+            case MSG_MOVE_SET_FACING:
+            case MSG_MOVE_HEARTBEAT:
+            {
+                itr = m_recvQueueMap.erase(itr);
+                break;
+            }
+            default:
+                ++itr;
+                break;
+        }
+    }
 }
 
 /// Logging helper for unexpected opcodes
@@ -252,23 +307,47 @@ void WorldSession::LogUnprocessedTail(WorldPacket& packet) const
                   packet.rpos(), packet.wpos());
 }
 
-/// Update the WorldSession (triggered by World update)
-bool WorldSession::Update(PacketFilter& updater)
+void WorldSession::ProcessByteBufferException(WorldPacket const& packet)
 {
-    std::lock_guard<std::mutex> guard(m_recvQueueLock);
+    sLog.outError("WorldSession::Update ByteBufferException occured while parsing a packet (opcode: %u) from client %s, accountid=%i.",
+        packet.GetOpcode(), GetRemoteAddress().c_str(), GetAccountId());
+    if (sLog.HasLogLevelOrHigher(LOG_LVL_DEBUG))
+    {
+        DEBUG_LOG("Dumping error causing packet:");
+        packet.hexlike();
+    }
+
+    if (sWorld.getConfig(CONFIG_BOOL_KICK_PLAYER_ON_BAD_PACKET))
+    {
+        DETAIL_LOG("Disconnecting session [account id %u / address %s] for badly formatted packet.",
+            GetAccountId(), GetRemoteAddress().c_str());
+        ObjectGuid guid = _player->GetObjectGuid();
+        GetMessager().AddMessage([guid](WorldSession* world) -> void
+        {
+            ObjectAccessor::KickPlayer(guid);
+        });
+    }
+}
+
+/// Update the WorldSession (triggered by World update)
+bool WorldSession::Update(uint32 diff)
+{
+    GetMessager().Execute(this);
+
+    std::deque<std::unique_ptr<WorldPacket>> recvQueueCopy;
+    {
+        std::lock_guard<std::mutex> guard(m_recvQueueLock);
+        std::swap(recvQueueCopy, m_recvQueue);
+    }
 
     ///- Retrieve packets from the receive queue and call the appropriate handlers
     /// not process packets if socket already closed
-    while (m_Socket && !m_Socket->IsClosed() && !m_recvQueue.empty())
+    while (m_Socket && !m_Socket->IsClosed() && !recvQueueCopy.empty())
     {
-        auto const packet = std::move(m_recvQueue.front());
-        m_recvQueue.pop_front();
+        // sLog.outError("MOEP: %s (0x%.4X)", packet->GetOpcodeName(), packet->GetOpcode());
 
-        /*#if 1
-        sLog.outError( "MOEP: %s (0x%.4X)",
-                        packet->GetOpcodeName(),
-                        packet->GetOpcode());
-        #endif*/
+        auto const packet = std::move(recvQueueCopy.front());
+        recvQueueCopy.pop_front();
 
         OpcodeHandler const& opHandle = opcodeTable[packet->GetOpcode()];
         try
@@ -343,21 +422,7 @@ bool WorldSession::Update(PacketFilter& updater)
         }
         catch (ByteBufferException&)
         {
-            sLog.outError("WorldSession::Update ByteBufferException occured while parsing a packet (opcode: %u) from client %s, accountid=%i.",
-                          packet->GetOpcode(), GetRemoteAddress().c_str(), GetAccountId());
-            if (sLog.HasLogLevelOrHigher(LOG_LVL_DEBUG))
-            {
-                DEBUG_LOG("Dumping error causing packet:");
-                packet->hexlike();
-            }
-
-            if (sWorld.getConfig(CONFIG_BOOL_KICK_PLAYER_ON_BAD_PACKET))
-            {
-                DETAIL_LOG("Disconnecting session [account id %u / address %s] for badly formatted packet.",
-                           GetAccountId(), GetRemoteAddress().c_str());
-
-                KickPlayer();
-            }
+            ProcessByteBufferException(*packet);
         }
     }
 
@@ -388,66 +453,109 @@ bool WorldSession::Update(PacketFilter& updater)
 
     // check if we are safe to proceed with logout
     // logout procedure should happen only in World::UpdateSessions() method!!!
-    if (updater.ProcessLogout())
+    switch (m_sessionState)
     {
-        switch (m_sessionState)
+        case WORLD_SESSION_STATE_CREATED:
         {
-            case WORLD_SESSION_STATE_CREATED:
+            if (m_requestSocket)
             {
-                if (m_requestSocket)
-                {
-                    if (!IsOffline())
-                        SetOffline();
-
-                    m_Socket = m_requestSocket;
-                    m_requestSocket = nullptr;
-                    sLog.outDetail("New Session key %s", m_Socket->GetSessionKey().AsHexStr());
-                    SendAuthOk();
-                }
-                else
-                {
-                    if (m_inQueue)
-                        SendAuthQueued();
-                    else
-                        SendAuthOk();
-                }
-                m_sessionState = WORLD_SESSION_STATE_READY;
-                return true;
-            }
-
-            case WORLD_SESSION_STATE_READY:
-            {
-                if (m_Socket && m_Socket->IsClosed())
-                {
-                    if (!_player)
-                        return false;
-
-                    // give the opportunity for this player to reconnect within 20 sec
+                if (!IsOffline())
                     SetOffline();
-                }
-                else if (ShouldLogOut(time(nullptr)) && !m_playerLoading)   // check if delayed logout is fired
-                    LogoutPlayer();
 
-                return true;
+                m_Socket = m_requestSocket;
+                m_requestSocket = nullptr;
+                sLog.outDetail("New Session key %s", m_Socket->GetSessionKey().AsHexStr());
+                SendAuthOk();
             }
-
-            case WORLD_SESSION_STATE_OFFLINE:
+            else
             {
-                if (ShouldDisconnect(time(nullptr)))   // check if delayed logout is fired
-                {
-                    LogoutPlayer();
-                    if (!m_requestSocket && (!m_Socket || m_Socket->IsClosed()))
-                        return false;
-                }
-
-                return true;
+                if (m_inQueue)
+                    SendAuthQueued();
+                else
+                    SendAuthOk();
             }
-            default:
-                break;
+            SetInCharSelection();
+            return true;
         }
+        case WORLD_SESSION_STATE_CHAR_SELECTION:
+        {
+            // waiting to go online
+            // TODO:: Maybe check if have to send queue update?
+            if (!m_Socket || (m_Socket && m_Socket->IsClosed()))
+            {
+                // directly remove this session
+                return false;
+            }
+
+            if (ShouldLogOut(time(nullptr)) && !m_playerLoading)   // check if delayed logout is fired
+                LogoutPlayer();
+
+            if (m_kickTime && m_kickTime <= time(nullptr))
+                KickPlayer(true);
+
+            return true;
+        }
+        case WORLD_SESSION_STATE_READY:
+        {
+            if (m_Socket && m_Socket->IsClosed())
+            {
+                if (!_player)
+                    return false;
+
+                // give the opportunity for this player to reconnect within 20 sec
+                SetOffline();
+            }
+            else if (ShouldLogOut(time(nullptr)) && !m_playerLoading)   // check if delayed logout is fired
+                LogoutPlayer();
+
+            return true;
+        }
+
+        case WORLD_SESSION_STATE_OFFLINE:
+        {
+            if (ShouldDisconnect(time(nullptr)))   // check if delayed logout is fired
+            {
+                LogoutPlayer();
+                if (!m_requestSocket && (!m_Socket || m_Socket->IsClosed()))
+                    return false;
+            }
+
+            return true;
+        }
+        default:
+            break;
     }
 
     return true;
+}
+
+void WorldSession::UpdateMap(uint32 diff)
+{
+    std::deque<std::unique_ptr<WorldPacket>> recvQueueMapCopy;
+    {
+        std::lock_guard<std::mutex> guard(m_recvQueueMapLock);
+        std::swap(recvQueueMapCopy, m_recvQueueMap);
+    }
+
+    for (size_t i = 0; m_Socket && !m_Socket->IsClosed() && i < recvQueueMapCopy.size(); ++i)
+    {
+        auto const packet = std::move(recvQueueMapCopy.front());
+        recvQueueMapCopy.pop_front();
+
+        OpcodeHandler const& opHandle = opcodeTable[packet->GetOpcode()];
+        
+        try
+        {
+            if (opHandle.status == STATUS_LOGGEDIN)
+            {
+                ExecuteOpcode(opHandle, *packet);
+            }
+        }
+        catch (ByteBufferException&)
+        {
+            ProcessByteBufferException(*packet);
+        }
+    }
 }
 
 /// %Log the player out
@@ -495,7 +603,7 @@ void WorldSession::LogoutPlayer()
             bg->EventPlayerLoggedOut(_player);
 
         ///- Teleport to home if the player is in an invalid instance
-        if (!_player->m_InstanceValid && !_player->isGameMaster())
+        if (!_player->m_InstanceValid && !_player->IsGameMaster())
         {
             _player->TeleportToHomebind();
             // this is a bad place to call for far teleport because we need player to be in world for successful logout
@@ -512,7 +620,7 @@ void WorldSession::LogoutPlayer()
             if (BattleGroundQueueTypeId bgQueueTypeId = _player->GetBattleGroundQueueTypeId(i))
             {
                 _player->RemoveBattleGroundQueueId(bgQueueTypeId);
-                sBattleGroundMgr.m_BattleGroundQueues[ bgQueueTypeId ].RemovePlayer(_player->GetObjectGuid(), true);
+                sBattleGroundMgr.m_battleGroundQueues[ bgQueueTypeId ].RemovePlayer(_player->GetObjectGuid(), true);
             }
         }
 
@@ -569,8 +677,11 @@ void WorldSession::LogoutPlayer()
             group->UpdatePlayerOnlineStatus(_player, false);
 
         ///- Broadcast a logout message to the player's friends
-        sSocialMgr.SendFriendStatus(_player, FRIEND_OFFLINE, _player->GetObjectGuid(), true);
-        sSocialMgr.RemovePlayerSocial(_player->GetGUIDLow());
+        if (_player->GetSocial()) // might not yet be initialized
+        {
+            sSocialMgr.SendFriendStatus(_player, FRIEND_OFFLINE, _player->GetObjectGuid(), true);
+            sSocialMgr.RemovePlayerSocial(_player->GetGUIDLow());
+        }
 
         // GM ticket notification
         sTicketMgr.OnPlayerOnlineState(*_player, false);
@@ -623,12 +734,22 @@ void WorldSession::LogoutPlayer()
 
     m_playerLogout = false;
     m_playerRecentlyLogout = true;
+
+    SetInCharSelection();
+
     LogoutRequest(0);
 }
 
 /// Kick a player out of the World
-void WorldSession::KickPlayer()
+void WorldSession::KickPlayer(bool save, bool inPlace)
 {
+    m_playerSave = save;
+    if (inPlace)
+    {
+        LogoutPlayer();
+        return;
+    }
+
 #ifdef BUILD_PLAYERBOT
     if (!_player)
         return;
@@ -1160,6 +1281,26 @@ void WorldSession::SendPlaySpellVisual(ObjectGuid guid, uint32 spellArtKit) cons
     SendPacket(data);
 }
 
+void WorldSession::SynchronizeMovement(MovementInfo& movementInfo)
+{
+    int64 movementTime = (int64)movementInfo.ctime + m_timeSyncClockDelta;
+    if (m_timeSyncClockDelta == 0 || movementTime < 0 || movementTime > 0xFFFFFFFF)
+    {
+        DETAIL_LOG("The computed movement time using clockDelta is erronous. Using fallback instead");
+        movementInfo.stime = World::GetCurrentMSTime();
+    }
+    else
+        movementInfo.stime = movementTime;
+}
+
+std::deque<uint32> WorldSession::GetOpcodeHistory()
+{
+    if (m_Socket)
+        return m_Socket->GetOpcodeHistory();
+    else
+        return std::deque<uint32>();
+}
+
 void WorldSession::SendAuthOk() const
 {
     WorldPacket packet(SMSG_AUTH_RESPONSE, 1);
@@ -1174,4 +1315,23 @@ void WorldSession::SendAuthQueued() const
     packet << uint32(sWorld.GetQueuedSessionPos(this));     // position in queue
     packet << uint8(0);                                     // unk 3.3.0
     SendPacket(packet);
+}
+
+void WorldSession::ResetTimeSync()
+{
+    m_timeSyncNextCounter = 0;
+    m_pendingTimeSyncRequests.clear();
+}
+
+void WorldSession::SendTimeSync()
+{
+    WorldPacket data(SMSG_TIME_SYNC_REQ, 4);
+    data << uint32(m_timeSyncNextCounter);
+    SendPacket(data);
+
+    m_pendingTimeSyncRequests[m_timeSyncNextCounter] = WorldTimer::getMSTime();
+
+    // Schedule next sync in 10 sec (except for the 2 first packets, which are spaced by only 5s)
+    m_timeSyncTimer = m_timeSyncNextCounter == 0 ? 5000 : 10000;
+    m_timeSyncNextCounter++;
 }

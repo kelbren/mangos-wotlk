@@ -27,7 +27,11 @@ extern void AddSC_npcs_special();
 extern void AddSC_quests_scripts();
 extern void AddSC_spell_scripts();
 extern void AddSC_world_map_scripts();
+extern void AddSC_boss_highlord_kruul();
+extern void AddSC_war_effort();
+extern void AddSC_suns_reach_reclamation();
 extern void AddSC_world_map_ebon_hold();
+extern void AddSC_shade_of_the_horseman();
 
 // eastern kingdoms
 extern void AddSC_blackrock_depths();                       // blackrock_depths
@@ -145,6 +149,7 @@ extern void AddSC_zulgurub();
 extern void AddSC_alterac_mountains();
 extern void AddSC_arathi_highlands();
 extern void AddSC_blasted_lands();
+extern void AddSC_boss_kazzakAI();
 extern void AddSC_burning_steppes();
 extern void AddSC_dun_morogh();
 extern void AddSC_eastern_plaguelands();
@@ -283,9 +288,7 @@ extern void AddSC_instance_gundrak();
 extern void AddSC_boss_bronjahm();                          // ICC, forge_of_souls
 extern void AddSC_boss_devourer_of_souls();
 extern void AddSC_instance_forge_of_souls();
-extern void AddSC_boss_falric();                            // ICC, halls_of_reflection
-extern void AddSC_boss_lich_king();
-extern void AddSC_boss_marwyn();
+extern void AddSC_boss_lich_king();                         // ICC, halls_of_reflection
 extern void AddSC_halls_of_reflection();
 extern void AddSC_instance_halls_of_reflection();
 extern void AddSC_boss_garfrost();                          // ICC, pit_of_saron
@@ -342,13 +345,13 @@ extern void AddSC_boss_halion();
 extern void AddSC_boss_saviana();
 extern void AddSC_boss_zarithrian();
 extern void AddSC_instance_ruby_sanctum();
+extern void AddSC_ruby_sanctum();
 extern void AddSC_boss_bjarngrim();                         // ulduar, halls_of_lightning
 extern void AddSC_boss_ionar();
 extern void AddSC_boss_loken();
 extern void AddSC_boss_volkhan();
 extern void AddSC_instance_halls_of_lightning();
-extern void AddSC_boss_maiden_of_grief();                   // ulduar, halls_of_stone
-extern void AddSC_boss_sjonnir();
+extern void AddSC_boss_sjonnir();                           // ulduar, halls_of_stone
 extern void AddSC_halls_of_stone();
 extern void AddSC_instance_halls_of_stone();
 extern void AddSC_boss_assembly_of_iron();                  // ulduar, ulduar
@@ -369,7 +372,6 @@ extern void AddSC_instance_ulduar();
 extern void AddSC_ulduar();
 extern void AddSC_boss_ingvar();                            // utgarde_keep, utgarde_keep
 extern void AddSC_boss_keleseth();
-extern void AddSC_boss_skarvald_and_dalronn();
 extern void AddSC_instance_utgarde_keep();
 extern void AddSC_utgarde_keep();
 extern void AddSC_boss_gortok();                           // utgarde_keep, utgarde_pinnacle
@@ -382,8 +384,8 @@ extern void AddSC_boss_emalon();
 extern void AddSC_boss_koralon();
 extern void AddSC_boss_toravon();
 extern void AddSC_instance_vault_of_archavon();
-extern void AddSC_boss_erekem();                            // violet_hold
-extern void AddSC_boss_ichoron();
+extern void AddSC_boss_ichoron();                           // violet_hold
+extern void AddSC_boss_xevozz();
 extern void AddSC_instance_violet_hold();
 extern void AddSC_violet_hold();
 
@@ -479,6 +481,8 @@ extern void AddSC_boss_pathaleon_the_calculator();
 extern void AddSC_instance_mechanar();
 
 extern void AddSC_blades_edge_mountains();
+extern void AddSC_bashir_landing();
+extern void AddSC_shartuul_transporter();
 extern void AddSC_boss_doomlordkazzak();
 extern void AddSC_boss_doomwalker();
 extern void AddSC_hellfire_peninsula();
@@ -516,7 +520,11 @@ void AddScripts()
     AddSC_quests_scripts();
     AddSC_spell_scripts();
     AddSC_world_map_scripts();
+    AddSC_boss_highlord_kruul();
+    AddSC_war_effort();
+    AddSC_suns_reach_reclamation();
     AddSC_world_map_ebon_hold();
+    AddSC_shade_of_the_horseman();
 
     // eastern kingdoms
     AddSC_blackrock_depths();                               // blackrock_depths
@@ -634,6 +642,7 @@ void AddScripts()
     AddSC_alterac_mountains();
     AddSC_arathi_highlands();
     AddSC_blasted_lands();
+    AddSC_boss_kazzakAI();
     AddSC_burning_steppes();
     AddSC_dun_morogh();
     AddSC_eastern_plaguelands();
@@ -772,9 +781,7 @@ void AddScripts()
     AddSC_boss_bronjahm();                                  // ICC, FH, forge_of_souls
     AddSC_boss_devourer_of_souls();
     AddSC_instance_forge_of_souls();
-    AddSC_boss_falric();                                    // ICC, FH, halls_of_reflection
-    AddSC_boss_lich_king();
-    AddSC_boss_marwyn();
+    AddSC_boss_lich_king();                                 // ICC, FH, halls_of_reflection
     AddSC_halls_of_reflection();
     AddSC_instance_halls_of_reflection();
     AddSC_boss_garfrost();                                  // ICC, FH, pit_of_saron
@@ -831,13 +838,13 @@ void AddScripts()
     AddSC_boss_saviana();
     AddSC_boss_zarithrian();
     AddSC_instance_ruby_sanctum();
+    AddSC_ruby_sanctum();
     AddSC_boss_bjarngrim();                                 // ulduar, halls_of_lightning
     AddSC_boss_ionar();
     AddSC_boss_loken();
     AddSC_boss_volkhan();
     AddSC_instance_halls_of_lightning();
-    AddSC_boss_maiden_of_grief();                           // ulduar, halls_of_stone
-    AddSC_boss_sjonnir();
+    AddSC_boss_sjonnir();                                   // ulduar, halls_of_stone
     AddSC_halls_of_stone();
     AddSC_instance_halls_of_stone();
     AddSC_boss_assembly_of_iron();                          // ulduar, ulduar
@@ -858,7 +865,6 @@ void AddScripts()
     AddSC_ulduar();
     AddSC_boss_ingvar();                                    // UK, utgarde_keep
     AddSC_boss_keleseth();
-    AddSC_boss_skarvald_and_dalronn();
     AddSC_instance_utgarde_keep();
     AddSC_utgarde_keep();
     AddSC_boss_gortok();                                    // UK, utgarde_pinnacle
@@ -871,8 +877,8 @@ void AddScripts()
     AddSC_boss_koralon();
     AddSC_boss_toravon();
     AddSC_instance_vault_of_archavon();
-    AddSC_boss_erekem();                                    // violet_hold
-    AddSC_boss_ichoron();
+    AddSC_boss_ichoron();                                   // violet_hold
+    AddSC_boss_xevozz();
     AddSC_instance_violet_hold();
     AddSC_violet_hold();
 
@@ -968,6 +974,8 @@ void AddScripts()
     AddSC_instance_mechanar();
 
     AddSC_blades_edge_mountains();
+    AddSC_bashir_landing();
+    AddSC_shartuul_transporter();
     AddSC_boss_doomlordkazzak();
     AddSC_boss_doomwalker();
     AddSC_hellfire_peninsula();

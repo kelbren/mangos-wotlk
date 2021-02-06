@@ -36,7 +36,8 @@ EndContentData */
 #include "AI/ScriptDevAI/include/sc_common.h"
 #include "AI/ScriptDevAI/base/escort_ai.h"
 #include "AI/ScriptDevAI/base/pet_ai.h"
-#include "AI/ScriptDevAI/base/TimerAI.h"
+#include "AI/BaseAI/PetAI.h"
+#include "AI/ScriptDevAI/base/CombatAI.h"
 #include "Entities/TemporarySpawn.h"
 #include "Spells/SpellAuras.h"
 
@@ -121,8 +122,11 @@ enum
     SAY_WOLF_WELCOME                = -1000498,
 
     SPELL_ANCESTRAL_WOLF_BUFF       = 29981,
+    SPELL_SELF_SNARE                = 30011, // Quest - Ancestral Spirit Wolf Self Snare, casted on self shortly after spawn (purpose unknown)
 
-    NPC_RYGA                        = 17123
+    NPC_RYGA                        = 17123,
+
+    SOUND_HOWL                      = 1018,
 };
 
 struct npc_ancestral_wolfAI : public npc_escortAI
@@ -134,6 +138,7 @@ struct npc_ancestral_wolfAI : public npc_escortAI
         else
             script_error_log("npc_ancestral_wolf can not obtain owner or owner is not a player.");
 
+        SetReactState(REACT_PASSIVE);
         Reset();
     }
 
@@ -150,13 +155,14 @@ struct npc_ancestral_wolfAI : public npc_escortAI
     {
         switch (uiPointId)
         {
-            case 0:
+            case 1:
                 DoScriptText(EMOTE_WOLF_LIFT_HEAD, m_creature);
                 break;
-            case 2:
+            case 3:
                 DoScriptText(EMOTE_WOLF_HOWL, m_creature);
                 break;
-            case 50:
+            case 51:
+                m_creature->PlayDistanceSound(SOUND_HOWL);
                 Creature* pRyga = GetClosestCreatureWithEntry(m_creature, NPC_RYGA, 30.0f);
                 if (pRyga && pRyga->IsAlive() && !pRyga->IsInCombat())
                     DoScriptText(SAY_WOLF_WELCOME, pRyga);
@@ -381,33 +387,33 @@ struct npc_wounded_blood_elfAI : public npc_escortAI
 
         switch (uiPointId)
         {
-            case 0:
+            case 1:
                 DoScriptText(SAY_ELF_START, m_creature, pPlayer);
                 break;
-            case 13:
+            case 14:
                 m_creature->SetFacingTo(3.7f);
                 DoScriptText(SAY_ELF_SUMMON1, m_creature, pPlayer);
                 m_creature->SummonCreature(NPC_TALONGUARD, -983.206f, 4163.884f, 38.01043f, 0.72f, TEMPSPAWN_TIMED_OOC_DESPAWN, 10000);
                 m_creature->SummonCreature(NPC_TALONGUARD, -985.732f, 4157.546f, 43.50933f, 0.80f, TEMPSPAWN_TIMED_OOC_DESPAWN, 10000);
                 break;
-            case 19:
+            case 20:
                 DoScriptText(SAY_ELF_RESTING, m_creature, pPlayer);
                 m_creature->SetStandState(UNIT_STAND_STATE_KNEEL);
                 break;
-            case 20:
+            case 21:
                 m_creature->SetStandState(UNIT_STAND_STATE_STAND);
                 break;
-            case 21:
+            case 22:
                 DoScriptText(SAY_ELF_SUMMON2, m_creature, pPlayer);
                 m_creature->SummonCreature(NPC_WINDWALKER, -864.001f, 4253.191f, 43.89390f, 5.27f, TEMPSPAWN_TIMED_OOC_DESPAWN, 10000);
                 break;
-            case 38:
+            case 39:
                 DoScriptText(SAY_ELF_COMPLETE, m_creature, pPlayer);
                 break;
-            case 39:
+            case 40:
                 m_creature->SetStandState(UNIT_STAND_STATE_DEAD);
                 break;
-            case 40:
+            case 41:
                 pPlayer->RewardPlayerAndGroupAtEventExplored(QUEST_ROAD_TO_FALCON_WATCH, m_creature);
                 pPlayer->GetMap()->ScriptsStart(sRelayScripts, DBSCRIPT_END_TALERIS_INT, m_creature, m_creature);
                 break;
@@ -477,6 +483,7 @@ struct npc_fel_guard_houndAI : public ScriptedPetAI
     {
         m_uiPoodadTimer = 0;
         m_bIsPooActive  = false;
+        SetReactState(REACT_PASSIVE);
     }
 
     void MovementInform(uint32 uiMoveType, uint32 uiPointId) override
@@ -1105,55 +1112,43 @@ enum
 
 enum AledisActions // order based on priority
 {
+    ALEDIS_LOW_HP,
     ALEDIS_ACTION_PYROBLAST,
     ALEDIS_ACTION_FROSTNOVA,
     ALEDIS_ACTION_FIREBALL,
     ALEDIS_ACTION_MAX
 };
 
-struct npc_magister_aledisAI : public ScriptedAI
+struct npc_magister_aledisAI : public RangedCombatAI
 {
-    npc_magister_aledisAI(Creature* creature) : ScriptedAI(creature)
+    npc_magister_aledisAI(Creature* creature) : RangedCombatAI(creature, ALEDIS_ACTION_MAX)
     {
+        AddTimerlessCombatAction(ALEDIS_LOW_HP, true);
+        AddCombatAction(ALEDIS_ACTION_PYROBLAST, 10000, 14000);
+        AddCombatAction(ALEDIS_ACTION_FROSTNOVA, 3000, 9000);
+        AddCombatAction(ALEDIS_ACTION_FIREBALL, 1000u);
+        AddDistanceSpell(SPELL_FROST_NOVA);
+        SetRangedMode(true, 20.f, TYPE_PROXIMITY);
         Reset();
     }
 
     bool m_bIsDefeated;
     bool m_bAllyAttacker;
 
-    uint32 m_actionTimers[ALEDIS_ACTION_MAX];
-    bool m_actionReadyStatus[ALEDIS_ACTION_MAX];
-
     void Reset() override
     {
+        RangedCombatAI::Reset();
         m_bAllyAttacker = false;
         m_bIsDefeated = false;
 
-        m_actionTimers[ALEDIS_ACTION_PYROBLAST] = GetInitialActionTimer(ALEDIS_ACTION_PYROBLAST);
-        m_actionTimers[ALEDIS_ACTION_FROSTNOVA] = GetInitialActionTimer(ALEDIS_ACTION_FROSTNOVA);
-        m_actionTimers[ALEDIS_ACTION_FIREBALL] = GetInitialActionTimer(ALEDIS_ACTION_FIREBALL);
-
-        for (uint32 i = 0; i < ALEDIS_ACTION_MAX; ++i)
-            m_actionReadyStatus[i] = false;
-
-        m_attackDistance = 20.f;
-
         SetCombatMovement(true);
         SetCombatScriptStatus(false);
-        m_meleeEnabled = false;
+
+        SetDeathPrevention(false);
+
+        SetReactState(REACT_AGGRESSIVE);
 
         m_creature->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP); // TODO: check if needs to be removed somewhere
-    }
-
-    uint32 GetInitialActionTimer(AledisActions id)
-    {
-        switch (id)
-        {
-            case ALEDIS_ACTION_PYROBLAST: return urand(10000, 14000);
-            case ALEDIS_ACTION_FROSTNOVA: return urand(3000, 9000);
-            case ALEDIS_ACTION_FIREBALL: return 1000;
-            default: return 0;
-        }
     }
 
     uint32 GetSubsequentActionTimer(AledisActions id)
@@ -1165,6 +1160,12 @@ struct npc_magister_aledisAI : public ScriptedAI
             case ALEDIS_ACTION_FIREBALL: return urand(3000, 4000);
             default: return 0;
         }
+    }
+
+    void Aggro(Unit* /*who*/)
+    {
+        if (m_creature->getFaction() == FACTION_ALLEDIS_HOSTILE)
+            SetDeathPrevention(true);
     }
 
     void EvadeReset()
@@ -1198,279 +1199,227 @@ struct npc_magister_aledisAI : public ScriptedAI
         m_creature->SetLootRecipient(nullptr);
     }
 
-    void ExecuteActions()
+    void ExecuteAction(uint32 action) override
     {
-        if (!CanExecuteCombatAction())
-            return;
-
-        for (uint32 i = 0; i < ALEDIS_ACTION_MAX; ++i)
+        switch (action)
         {
-            if (m_actionReadyStatus[i])
+            case ALEDIS_LOW_HP:
             {
-                switch (i)
-                {
-                    case ALEDIS_ACTION_PYROBLAST:
-                    {
-                        if (DoCastSpellIfCan(m_creature->GetVictim(), SPELL_PYROBLAST) == CAST_OK)
-                        {
-                            m_actionTimers[i] = GetSubsequentActionTimer(AledisActions(i));
-                            m_actionReadyStatus[i] = false;
-                        }
-                        continue;
-                    }
-                    case ALEDIS_ACTION_FROSTNOVA:
-                    {
-                        if (Unit* target = m_creature->SelectAttackingTarget(ATTACKING_TARGET_NEAREST_BY, 0, SPELL_FROST_NOVA, SELECT_FLAG_PLAYER | SELECT_FLAG_USE_EFFECT_RADIUS))
-                        {
-                            if (DoCastSpellIfCan(m_creature, SPELL_FROST_NOVA) == CAST_OK)
-                            {
-                                m_actionTimers[i] = GetSubsequentActionTimer(AledisActions(i));
-                                m_actionReadyStatus[i] = false;
-                            }
-                            continue;
-                        }
-                    }
-                    case ALEDIS_ACTION_FIREBALL:
-                    {
-                        if (DoCastSpellIfCan(m_creature->GetVictim(), SPELL_FIREBALL) == CAST_OK)
-                        {
-                            m_actionTimers[i] = GetSubsequentActionTimer(AledisActions(i));
-                            m_actionReadyStatus[i] = false;
-                        }
-                        continue;
-                    }
-                }
-            }
-        }
-    }
+                if (m_creature->GetHealthPercent() > 20.0f || m_creature->getFaction() != FACTION_ALLEDIS_HOSTILE)
+                    return;
 
-    void JustStoppedMovementOfTarget(SpellEntry const* spell, Unit* victim) override
-    {
-        switch (spell->Id)
-        {
-        case SPELL_FROST_NOVA:
-            if (m_creature->GetVictim() != victim) // frostnova hit others, resist case
-                break;
-            DistanceYourself();
-            break;
-        }
-    }
-
-    void DistanceYourself()
-    {
-        if (Unit* victim = m_creature->GetVictim()) // make sure target didnt die
-        {
-            float distance = DISTANCING_CONSTANT + m_creature->GetCombinedCombatReach(victim, true);
-            m_creature->GetMotionMaster()->DistanceYourself(distance);
-        }
-    }
-
-    void DistancingStarted()
-    {
-        SetCombatScriptStatus(true);
-        SetMeleeEnabled(false);
-    }
-
-    void DistancingEnded()
-    {
-        SetCombatScriptStatus(false);
-        SetMeleeEnabled(true);
-    }
-
-    void UpdateAI(const uint32 uiDiff) override
-    {
-        if (!m_creature->SelectHostileTarget() || !m_creature->GetVictim())
-            return;
-
-        for (uint32 i = 0; i < ALEDIS_ACTION_MAX; ++i)
-        {
-            if (!m_actionReadyStatus[i])
-            {
-                if (m_actionTimers[i] <= uiDiff)
-                {
-                    m_actionTimers[i] = 0;
-                    m_actionReadyStatus[i] = true;
-                }
-                else
-                    m_actionTimers[i] -= uiDiff;
-            }
-        }
-
-        if (!m_bAllyAttacker && !m_bIsDefeated && m_creature->GetHealthPercent() < 20.0f)
-        {
-            if (m_creature->getFaction() == FACTION_ALLEDIS_HOSTILE)
-            {
                 // evade when defeated; faction is reset automatically
                 m_bIsDefeated = true;
                 m_creature->SetFactionTemporary(FACTION_ALLEDIS_FRIENDLY, TEMPFACTION_RESTORE_RESPAWN);
                 EnterEvadeMode();
                 m_creature->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_QUESTGIVER);
+                SetReactState(REACT_PASSIVE);
 
                 DoScriptText(SAY_ALEDIS_DEFEAT, m_creature);
                 m_creature->ForcedDespawn(30000);
                 return;
             }
-            else
-                m_bAllyAttacker = true;
-        }
-
-        if (!m_bIsDefeated)
-        {
-            ExecuteActions();
-            DoMeleeAttackIfReady();
+            case ALEDIS_ACTION_PYROBLAST:
+            {
+                if (DoCastSpellIfCan(m_creature->GetVictim(), SPELL_PYROBLAST) == CAST_OK)
+                    ResetCombatAction(action, GetSubsequentActionTimer(AledisActions(action)));
+                return;
+            }
+            case ALEDIS_ACTION_FROSTNOVA:
+            {
+                if (Unit* target = m_creature->SelectAttackingTarget(ATTACKING_TARGET_NEAREST_BY, 0, SPELL_FROST_NOVA, SELECT_FLAG_PLAYER | SELECT_FLAG_USE_EFFECT_RADIUS))
+                    if (DoCastSpellIfCan(m_creature, SPELL_FROST_NOVA) == CAST_OK)
+                        ResetCombatAction(action, GetSubsequentActionTimer(AledisActions(action)));
+                return;
+            }
+            case ALEDIS_ACTION_FIREBALL:
+            {
+                if (DoCastSpellIfCan(m_creature->GetVictim(), SPELL_FIREBALL) == CAST_OK)
+                    ResetCombatAction(action, GetSubsequentActionTimer(AledisActions(action)));
+                return;
+            }
         }
     }
 };
 
-UnitAI* GetAI_npc_magister_aledis(Creature* pCreature)
-{
-    return new npc_magister_aledisAI(pCreature);
-}
-
-/*######
-## npc_living_flare
-######*/
-
 enum
 {
-    EMOTE_FLARE_UNSTABLE            = -1001214,
-    EMOTE_FLARE_BURST               = -1001215,
+    NPC_LIVING_FLARE            = 24916,
+    NPC_GENERIC_QUEST_TRIGGER_LAB = 24959,
+    NPC_UNSTABLE_LIVING_FLARE   = 24958,
 
-    SPELL_LIVING_COSMETIC           = 44880,                // cosmetic spell
-    SPELL_LIVING_FLARE_MASTER       = 44877,                // dummy aura used to hit the pet
-    SPELL_FEL_FLAREUP               = 44944,                // scale up pet
-    SPELL_LIVING_FLARE_UNSTABLE     = 44943,                // visual to transform
-    SPELL_UNSTABLE_COSMETIC         = 46196,                // cosmetic spell
-    //SPELL_LIVING_FLARE_DETONATOR  = 44948,                // possible used check for the generic quest trigger; needs more research
-    SPELL_COSMETIC_EXPLOSION        = 46225,                // ToDo: confirm spell
-    SPELL_QUEST_CREDIT              = 44947,                // quest complete spell
+    GO_LARGE_FIRE               = 187084,
 
-    NPC_UNSTABLE_LIVING_FLARE       = 24958,
-    NPC_GENERIC_QUEST_TRIGGER       = 24959,                // dummy npc used to check for the gate
-    GO_LARGE_FIRE                   = 187084,
+    SPELL_LIVING_FLARE_MASTER   = 44877,
+    SPELL_FEL_FLAREUP           = 44944,
+    SPELL_TRANSFORM             = 44943,
+    SPELL_QUEST_CREDIT          = 44947,
+    SPELL_DETONATOR             = 44948,
+    SPELL_LIVING_COSMETIC       = 44880,
+    SPELL_UNSTABLE_COSMETIC     = 46196,
+    SPELL_HUGE_EXPLOSION_TEST   = 46225,
 
-    MAX_FLAREUP_STACKS              = 8,
+    EMOTE_LIVING_FLARE          = -1001214,
+    EMOTE_UNSTABLE_FLARE        = -1001215,
 };
 
 struct npc_living_flareAI : public ScriptedPetAI
 {
-    npc_living_flareAI(Creature* pCreature) : ScriptedPetAI(pCreature) { Reset(); }
+    npc_living_flareAI(Creature* pCreature) : ScriptedPetAI(pCreature), m_uiStacks(0)
+    {
+        Reset();
+    }
 
-    bool m_bCheckComplete;
+    uint32 m_uiStacks;
     uint32 m_uiCheckTimer;
+    bool m_uiFollow;
+    uint32 m_uiExplosionTimer;
+    ObjectGuid m_uiQuestCreditGuid;
 
     void Reset() override
     {
-        m_uiCheckTimer      = 0;
-        m_bCheckComplete    = false;
-
-        DoCastSpellIfCan(m_creature, SPELL_LIVING_COSMETIC);
+        m_uiCheckTimer = 0;
+        m_uiFollow = true;
     }
 
-    void ReceiveAIEvent(AIEventType eventType, Unit* /*pSender*/, Unit* /*pInvoker*/, uint32 /*uiMiscValue*/) override
+    void JustRespawned() override
     {
-        if (eventType == AI_EVENT_CUSTOM_A)
+        m_creature->CastSpell(nullptr, SPELL_LIVING_COSMETIC, TRIGGERED_OLD_TRIGGERED);
+    }
+
+    void SpellHit(Unit* /*caster*/, const SpellEntry* spellInfo) override
+    {
+        if (spellInfo->Id == SPELL_FEL_FLAREUP) // handle morph here instead of spellEffects so we can do script text
         {
-            DoScriptText(EMOTE_FLARE_UNSTABLE, m_creature);
-            m_creature->RemoveAurasDueToSpell(SPELL_LIVING_COSMETIC);
-            // Note: on updateEntry the scale of the object should be persistent; requires core fix
-            m_creature->UpdateEntry(NPC_UNSTABLE_LIVING_FLARE);
-            DoCastSpellIfCan(m_creature, SPELL_LIVING_FLARE_UNSTABLE, CAST_TRIGGERED);
-            DoCastSpellIfCan(m_creature, SPELL_UNSTABLE_COSMETIC, CAST_TRIGGERED);
-            m_uiCheckTimer = 1000;
+            m_uiStacks++;
+            if (m_uiStacks == 8)
+            {
+                m_creature->CastSpell(nullptr, SPELL_TRANSFORM, TRIGGERED_OLD_TRIGGERED);
+                DoScriptText(EMOTE_LIVING_FLARE, m_creature);
+                m_uiCheckTimer = 1000;
+            }
         }
+        if (m_uiStacks < 8) // reapply cosmetic effect after spellhit, for some reason it gets removed
+            m_creature->CastSpell(nullptr, SPELL_LIVING_COSMETIC, TRIGGERED_OLD_TRIGGERED);
+        else
+            m_creature->CastSpell(nullptr, SPELL_UNSTABLE_COSMETIC, TRIGGERED_OLD_TRIGGERED);
     }
 
     void MovementInform(uint32 /*uiMovementType*/, uint32 uiPointId) override
     {
-        if (!uiPointId)
-            return;
-
-        DoCastSpellIfCan(m_creature, SPELL_QUEST_CREDIT, CAST_TRIGGERED);
-        DoCastSpellIfCan(m_creature, SPELL_COSMETIC_EXPLOSION, CAST_TRIGGERED);
-        DoScriptText(EMOTE_FLARE_BURST, m_creature);
-        m_creature->ForcedDespawn(2000);
-
-        // respawn all fires in range
-        GameObjectList lFiresInRange;
-        GetGameObjectListWithEntryInGrid(lFiresInRange, m_creature, GO_LARGE_FIRE, 50.0f);
-
-        if (lFiresInRange.empty())
-            return;
-
-        for (GameObjectList::const_iterator itr = lFiresInRange.begin(); itr != lFiresInRange.end(); ++itr)
+        if (uiPointId == 1)
         {
-            (*itr)->SetRespawnTime(60);
-            (*itr)->Refresh();
+            m_uiExplosionTimer = 4000;
+            m_creature->CastSpell(nullptr, SPELL_QUEST_CREDIT, TRIGGERED_OLD_TRIGGERED); // is cast at pet owner
+            DoScriptText(EMOTE_UNSTABLE_FLARE, m_creature);
+            if (Creature* questTrigger = GetClosestCreatureWithEntry(m_creature, NPC_GENERIC_QUEST_TRIGGER_LAB, 100.0f))
+                questTrigger->CastSpell(questTrigger, SPELL_DETONATOR, TRIGGERED_OLD_TRIGGERED);
+            m_creature->RemoveAurasDueToSpell(SPELL_UNSTABLE_COSMETIC);
         }
     }
 
-    // Custom function to check for the Generic quest trigger
-    bool DoCheckQuestTrigger()
+    void CheckPortalDist()
     {
-        // ToDo: check if we should use the spell to check for the detonator
-        if (Creature* pCredit = GetClosestCreatureWithEntry(m_creature, NPC_GENERIC_QUEST_TRIGGER, 30.0f))
+        if (Creature* questCredit = GetClosestCreatureWithEntry(m_creature, NPC_GENERIC_QUEST_TRIGGER_LAB, 50.f)) // if within distance of portal, initiate final sequence
         {
-            m_bCheckComplete = true;
-            m_creature->SetWalk(true);
-            m_creature->GetMotionMaster()->Clear();
-            m_creature->GetMotionMaster()->MovePoint(1, pCredit->GetPositionX(), pCredit->GetPositionY(), pCredit->GetPositionZ());
-
-            return true;
+            m_uiCheckTimer = 0;
+            m_uiFollow = false;
+            m_creature->GetMotionMaster()->MovePoint(1, 831.892f, 2511.94f, 292.0167f);
+            m_uiQuestCreditGuid = questCredit->GetObjectGuid();
         }
-
-        return false;
+        else
+            m_uiCheckTimer = 1000;
     }
 
-    void UpdateAI(const uint32 uiDiff) override
-    {
-        if (!m_bCheckComplete)
-            ScriptedPetAI::UpdateAI(uiDiff);
-    }
-
-    void UpdatePetOOCAI(const uint32 uiDiff) override
+    void UpdatePetAI(const uint32 uiDiff) override
     {
         if (m_uiCheckTimer)
         {
             if (m_uiCheckTimer <= uiDiff)
-            {
-                if (DoCheckQuestTrigger())
-                    m_uiCheckTimer = 0;
-                else
-                    m_uiCheckTimer = 1000;
-            }
+                CheckPortalDist();
             else
                 m_uiCheckTimer -= uiDiff;
         }
     }
-};
 
-UnitAI* GetAI_npc_living_flare(Creature* pCreature)
-{
-    return new npc_living_flareAI(pCreature);
-}
-
-bool EffectAuraDummy_spell_aura_dummy_living_flare(const Aura* pAura, bool bApply)
-{
-    if (pAura->GetId() == SPELL_LIVING_FLARE_MASTER && pAura->GetEffIndex() == EFFECT_INDEX_0 && bApply)
+    void UpdateAI(const uint32 uiDiff) override
     {
-        if (Creature* pTarget = (Creature*)pAura->GetTarget())
+        if (m_uiFollow)
         {
-            pTarget->CastSpell(pTarget, SPELL_FEL_FLAREUP, TRIGGERED_OLD_TRIGGERED);
+            Unit* pOwner = m_creature->GetMaster();
 
-            SpellAuraHolder* pHolder = pTarget->GetSpellAuraHolder(SPELL_FEL_FLAREUP);
-            if (pHolder)
+            if (!pOwner)
+                return;
+
+            if (m_creature->GetCharmInfo()->HasCommandState(COMMAND_FOLLOW))
             {
-                if (pHolder->GetStackAmount() >= MAX_FLAREUP_STACKS)
-                    pTarget->AI()->SendAIEvent(AI_EVENT_CUSTOM_A, pTarget, pTarget);
-                // Note: cosmetic aura is removed, so we need to add it back. This needs to be fixed
-                else
-                    pTarget->CastSpell(pTarget, SPELL_LIVING_COSMETIC, TRIGGERED_OLD_TRIGGERED);
+                // not following, so start follow
+                if (!m_creature->hasUnitState(UNIT_STAT_FOLLOW))
+                    m_creature->GetMotionMaster()->MoveFollow(pOwner, PET_FOLLOW_DIST, PET_FOLLOW_ANGLE);
+
+                // update when not in combat
+                UpdatePetAI(uiDiff);
             }
         }
+        if (m_uiExplosionTimer)
+        {
+            if (m_uiExplosionTimer <= uiDiff)
+            {
+                m_uiExplosionTimer = 0;
+                Unit* master = m_creature->GetMaster();
+                if (master && master->GetTypeId() == TYPEID_PLAYER)
+                {
+                    m_creature->ForcedDespawn();
+                    ((Player*)master)->RemoveMiniPet();
+                }
+            }
+            else
+                m_uiExplosionTimer -= uiDiff;
+        }
     }
-    return true;
-}
+};
+
+struct LivingFlareDetonator : public SpellScript
+{
+    void OnEffectExecute(Spell* spell, SpellEffectIndex /*effIdx*/) const override
+    {
+        if (Unit* target = spell->GetUnitTarget())
+            target->CastSpell(nullptr, SPELL_HUGE_EXPLOSION_TEST, TRIGGERED_OLD_TRIGGERED);
+        GameObjectList objectList;
+        GetGameObjectListWithEntryInGrid(objectList, spell->GetCaster(), GO_LARGE_FIRE, 30.f);
+        for (auto* flame : objectList)
+        {
+            flame->SetLootState(GO_READY);
+            flame->SetRespawnTime(60);           // despawn object in 60 seconds
+            flame->Refresh();
+        }
+    }
+};
+
+struct LivingFlareMaster : public AuraScript
+{
+    void OnApply(Aura* aura, bool apply) const override
+    {
+        if (apply)
+            if (aura->GetTarget()->GetAuraCount(SPELL_FEL_FLAREUP) < 8)
+                aura->GetTarget()->CastSpell(nullptr, SPELL_FEL_FLAREUP, TRIGGERED_OLD_TRIGGERED);
+    }
+};
+
+struct LivingFlareUnstable : public AuraScript
+{
+    void OnApply(Aura* aura, bool apply) const override
+    {
+        if (apply)
+        {
+            Unit* target = aura->GetTarget();
+            if (target->IsCreature())
+                static_cast<Creature*>(target)->UpdateEntry(NPC_UNSTABLE_LIVING_FLARE);
+            target->RemoveAurasDueToSpell(SPELL_LIVING_COSMETIC);
+            target->CastSpell(nullptr, SPELL_UNSTABLE_COSMETIC, TRIGGERED_OLD_TRIGGERED);
+        }
+    }
+};
 
 enum
 {
@@ -1540,7 +1489,7 @@ struct npc_danath_trollbaneAI : public ScriptedAI
                 m_bOnYell2 = false;
 
                 // Mount Magtheridon's Head (update object)
-                if (GameObject* goHead = GetClosestGameObjectWithEntry(m_creature, OBJECT_MAGTHERIDONS_HEAD, 100.0f))
+                if (GameObject* goHead = GetClosestGameObjectWithEntry(m_creature, OBJECT_MAGTHERIDONS_HEAD, 120.0f))
                     if (Unit* invoker = m_creature->GetMap()->GetUnit(m_guidInvoker))
                         goHead->Use(invoker);
             }
@@ -1623,7 +1572,7 @@ struct npc_nazgrelAI : public ScriptedAI
                 m_bOnYell2 = false;
 
                 // Mount Magtheridon's Head (update object)
-                if (GameObject* goHead = GetClosestGameObjectWithEntry(m_creature, OBJECT_MAGTHERIDONS_HEAD, 100.0f))
+                if (GameObject* goHead = GetClosestGameObjectWithEntry(m_creature, OBJECT_MAGTHERIDONS_HEAD, 120.0f))
                     if (Unit* invoker = m_creature->GetMap()->GetUnit(m_guidInvoker))
                         goHead->Use(invoker);
             }
@@ -1768,7 +1717,7 @@ struct npc_vindicator_sedaiAI : public ScriptedAI, public CombatActions
 
         AddCustomAction(SEDAI_ACTION_FELORC_SPAWN_ATTACK, true, [&]()
         {
-            if (Creature* orc = m_creature->SummonCreature(NPC_FEL_ORC, 258.168854f, 4109.307617f, 91.639290f, 2.644194f, TEMPSPAWN_CORPSE_TIMED_DESPAWN, 4000, true))
+            if (Creature* orc = m_creature->SummonCreature(NPC_FEL_ORC, 258.168854f, 4109.307617f, 91.639290f, 2.644194f, TEMPSPAWN_TIMED_DESPAWN, 60000, true))
             {
                 m_felOrc = orc->GetObjectGuid();
                 if (Creature* maghar = m_creature->GetMap()->GetCreature(m_maghar))
@@ -1777,7 +1726,7 @@ struct npc_vindicator_sedaiAI : public ScriptedAI, public CombatActions
                     maghar->AI()->AttackStart(orc);
                 }
             }
-            if (Creature* orc = m_creature->SummonCreature(NPC_FEL_ORC, 256.429932f, 4105.590820f, 90.982086f, 2.734515f, TEMPSPAWN_CORPSE_TIMED_DESPAWN, 4000, true))
+            if (Creature* orc = m_creature->SummonCreature(NPC_FEL_ORC, 256.429932f, 4105.590820f, 90.982086f, 2.734515f, TEMPSPAWN_TIMED_DESPAWN, 60000, true))
             {
                 m_felOrcTwo = orc->GetObjectGuid();
                 if (Creature* maghar = m_creature->GetMap()->GetCreature(m_magharTwo))
@@ -2035,6 +1984,7 @@ struct npc_laughing_skullAI : public ScriptedAI
     npc_laughing_skullAI(Creature* creature) : ScriptedAI(creature)
     {
         SetReactState(REACT_DEFENSIVE);
+        creature->GetCombatManager().SetLeashingDisable(true);
         Reset();
     }
 
@@ -2099,6 +2049,359 @@ bool ProcessEventId_sedai_vision(uint32 /*eventId*/, Object* source, Object* /*t
     }
 }
 
+struct KaliriNest : public GameObjectAI
+{
+    using GameObjectAI::GameObjectAI;
+    void OnLootStateChange() override
+    {
+        if (m_go->GetLootState() == GO_JUST_DEACTIVATED)
+        {
+            m_go->SetForcedDespawn();
+            if (GameObjectData const* data = sObjectMgr.GetGOData(m_go->GetObjectGuid().GetCounter()))
+                m_go->SetRespawnDelay(data->GetRandomRespawnTime());
+        }
+    }
+};
+
+enum
+{
+    NPC_GRYPHON_BRIGADIER_SOUTH         = 21170,
+    NPC_GRYPHON_BRIGADIER_NORTH         = 22404,
+    NPC_GRYPHON_BRIGADIER_FORGE         = 22405,
+    NPC_GRYPHON_BRIGADIER_FOOTHILL      = 22406,
+
+    NPC_CREDIT_MARKER_SOUTH             = 21182,
+    NPC_CREDIT_MARKER_NORTH             = 22401,
+    NPC_CREDIT_MARKER_FORGE             = 22402,
+    NPC_CREDIT_MARKER_FOOTHILL          = 22403,
+
+    NPC_CREDIT_MARKER_THEY_MUST_BURN    = 21173, // summons the Gryphon NPCs - 2 spawn locations
+
+    SPELL_SUMMON_BRIGADIER_SOUTH        = 36302,
+    SPELL_SUMMON_BRIGADIER_NORTH        = 39106,
+    SPELL_SUMMON_BRIGADIER_FORGE        = 39107,
+    SPELL_SUMMON_BRIGADIER_FOOTHILL     = 39108,
+
+    COUNT_SPAWNS                        = 4,
+};
+
+struct go_smoke_beacon : public GameObjectAI
+{
+    go_smoke_beacon(GameObject* go) : GameObjectAI(go) { m_uiCustomAnimTimer = 250; m_uiAnimCount = 0; }
+
+    uint32 m_uiCustomAnimTimer;
+    uint8 m_uiAnimCount;
+
+    void UpdateAI(const uint32 uiDiff) override
+    {
+        if (!m_go->IsSpawned())
+            return;
+
+        if (m_uiAnimCount < 8)
+        {
+            if (m_uiCustomAnimTimer <= uiDiff)
+            {
+                m_go->SendGameObjectCustomAnim(m_go->GetObjectGuid(), 3);
+                m_uiCustomAnimTimer = 1000;
+                m_uiAnimCount++;
+            }
+            else
+                m_uiCustomAnimTimer -= uiDiff;
+        }
+    }
+};
+
+GameObjectAI* GetAI_go_smoke_beacon(GameObject* go)
+{
+    return new go_smoke_beacon(go);
+}
+
+struct npc_credit_marker_they_must_burnAI : public ScriptedAI
+{
+    npc_credit_marker_they_must_burnAI(Creature* pCreature) : ScriptedAI(pCreature) { Reset(); }
+
+    uint32 m_uiSummonTimer;
+    uint32 m_uiSpawnCounter;
+    uint32 m_uiCreditMarker;
+
+    void Reset() override
+    {
+        m_uiSummonTimer = 0;
+        m_uiCreditMarker = 0;
+        m_uiSpawnCounter = 0;
+    }
+
+    void SummonBombers(uint32 creditMarker)
+    {
+        m_uiSummonTimer = 1000;
+        m_uiCreditMarker = creditMarker;
+        m_uiSpawnCounter = 0;
+    }
+
+    void JustSummoned(Creature* pSummoned) override
+    {
+        switch (pSummoned->GetEntry())
+        {
+            case NPC_GRYPHON_BRIGADIER_SOUTH:
+            case NPC_GRYPHON_BRIGADIER_FOOTHILL:
+                pSummoned->GetMotionMaster()->MoveWaypoint(urand(0, 3));
+                break;
+            case NPC_GRYPHON_BRIGADIER_NORTH:
+                pSummoned->GetMotionMaster()->MoveWaypoint(urand(0, 2));
+                break;
+            case NPC_GRYPHON_BRIGADIER_FORGE:
+                pSummoned->GetMotionMaster()->MoveWaypoint();
+                break;
+        }
+    }
+
+    void UpdateAI(const uint32 uiDiff) override
+    {
+        if (m_uiSpawnCounter < COUNT_SPAWNS)
+        {
+            if (m_uiSummonTimer <= uiDiff)
+            {
+                switch (m_uiCreditMarker)
+                {
+                    case NPC_CREDIT_MARKER_SOUTH:
+                        m_creature->CastSpell(nullptr, SPELL_SUMMON_BRIGADIER_SOUTH, TRIGGERED_OLD_TRIGGERED);
+                        break;
+                    case NPC_CREDIT_MARKER_NORTH:
+                        m_creature->CastSpell(nullptr, SPELL_SUMMON_BRIGADIER_NORTH, TRIGGERED_OLD_TRIGGERED);
+                        break;
+                    case NPC_CREDIT_MARKER_FORGE:
+                        m_creature->CastSpell(nullptr, SPELL_SUMMON_BRIGADIER_FORGE, TRIGGERED_OLD_TRIGGERED);
+                        break;
+                    case NPC_CREDIT_MARKER_FOOTHILL:
+                        m_creature->CastSpell(nullptr, SPELL_SUMMON_BRIGADIER_FOOTHILL, TRIGGERED_OLD_TRIGGERED);
+                        break;
+                }
+                m_uiSummonTimer = 1000;
+                m_uiSpawnCounter++;
+            }
+            else
+                m_uiSummonTimer -= uiDiff;
+        }
+        else
+        {
+            Reset();
+        }
+    }
+};
+
+UnitAI* GetAI_npc_credit_marker_they_must_burn(Creature* pCreature)
+{
+    return new npc_credit_marker_they_must_burnAI(pCreature);
+}
+
+struct SummonSmokeBeacon : public SpellScript
+{
+    void OnEffectExecute(Spell* spell, SpellEffectIndex effIdx) const override
+    {
+        if (effIdx != EFFECT_INDEX_2)
+            return;
+
+        if (Unit* unitTarget = spell->GetUnitTarget())
+        {
+            if (Creature* summoner = GetClosestCreatureWithEntry(unitTarget, NPC_CREDIT_MARKER_THEY_MUST_BURN, 250.f))
+            {
+                if (npc_credit_marker_they_must_burnAI* summonerAI = dynamic_cast<npc_credit_marker_they_must_burnAI*>(summoner->AI()))
+                {
+                    summonerAI->SummonBombers(unitTarget->GetEntry());
+                }
+            }
+        }
+    }
+};
+
+enum
+{
+    FACTION_SCARAB_HOSTILE = 14,
+};
+
+struct CursedScarabPeriodicTrigger : public SpellScript
+{
+    void OnEffectExecute(Spell* spell, SpellEffectIndex /*effIdx*/) const override
+    {
+        Unit* target = spell->GetUnitTarget();
+        if (target && target->getFaction() != FACTION_SCARAB_HOSTILE && urand(0, 10) == 0)
+            target->setFaction(FACTION_SCARAB_HOSTILE);
+    }
+};
+
+struct CursedScarabDespawnPeriodicTrigger : public SpellScript
+{
+    void OnEffectExecute(Spell* spell, SpellEffectIndex /*effIdx*/) const override
+    {
+        Unit* target = spell->GetUnitTarget();
+        if (target && target->IsCreature())
+            static_cast<Creature*>(target)->ForcedDespawn();
+    }
+};
+
+enum
+{
+    SPELL_EXPOSE_RAZORTHORN_ROOT = 44935,
+    SPELL_SUMMON_RAZORTHORN_ROOT = 44941,
+    NPC_RAZORTHORN_RAVAGER       = 24922,
+    GO_RAZORTHORN_DIRT_MOUND     = 187073,
+
+    SPELL_REND = 13443,
+    SPELL_RAVAGE = 33781,
+
+    POINT_MOUND = 1,
+};
+
+struct ExposeRazorthornRoot : public SpellScript
+{
+    void OnEffectExecute(Spell* spell, SpellEffectIndex effIdx) const override
+    {
+        Unit* target = spell->GetUnitTarget();
+        if (!target || !target->AI())
+            return;
+
+        target->AI()->SendAIEvent(AI_EVENT_CUSTOM_A, target, target);
+    }
+};
+
+struct npc_razorthorn_ravager_pet : public PetAI, public TimerManager
+{
+    npc_razorthorn_ravager_pet(Creature* creature) : PetAI(creature)
+    {
+        AddCustomAction(1, true, [&]() { HandleAnimations(); });
+    }
+
+    uint32 m_animStage;
+    ObjectGuid m_mound;
+
+    void ReceiveAIEvent(AIEventType eventType, Unit* /*sender*/, Unit* /*invoker*/, uint32 /*miscValue*/) override
+    {
+        if (eventType == AI_EVENT_CUSTOM_A && m_animStage == 0)
+            HandleAnimations();
+    }
+
+    void MovementInform(uint32 movementType, uint32 data)
+    {
+        if (movementType == POINT_MOTION_TYPE)
+            if (data == POINT_MOUND)
+                ResetTimer(1, 500);
+    }
+
+    void HandleAnimations()
+    {
+        uint32 timer = 0;
+        switch (m_animStage)
+        {
+            case 0:
+            {
+                GameObject* mound = GetClosestGameObjectWithEntry(m_creature, GO_RAZORTHORN_DIRT_MOUND, 20.0f);
+                if (!mound || mound->GetRespawnTime() != 0)
+                {
+                    m_animStage = 0;
+                    return;
+                }
+
+                m_mound = mound->GetObjectGuid();
+                float x, y, z;
+                mound->GetContactPoint(mound, x, y, z, CONTACT_DISTANCE);
+                m_creature->SendPetTalk(0);
+                m_creature->GetMotionMaster()->MovePoint(POINT_MOUND, x, y, z);
+                SetCombatScriptStatus(true);
+                break;
+            }
+            case 1:
+                m_creature->CastSpell(nullptr, SPELL_SUMMON_RAZORTHORN_ROOT, TRIGGERED_OLD_TRIGGERED);
+                if (GameObject* mound = m_creature->GetMap()->GetGameObject(m_mound))
+                    mound->SetLootState(GO_JUST_DEACTIVATED);
+                else
+                {
+                    m_animStage = 0;
+                    SetCombatScriptStatus(false);
+                    return;
+                }
+                m_creature->GetMotionMaster()->Clear(false, true);
+                m_creature->GetMotionMaster()->MoveIdle();
+                m_creature->HandleEmote(EMOTE_ONESHOT_ATTACKUNARMED);
+                timer = 2000;
+                break;
+            case 2:
+                m_animStage = 0;
+                SetCombatScriptStatus(false);
+                m_unit->GetMotionMaster()->MoveFollow(m_creature->GetCharmer(), PET_FOLLOW_ANGLE, PET_FOLLOW_DIST, true);
+                return;
+        }
+        ++m_animStage;
+        if (timer)
+            ResetTimer(1, timer);
+    }
+
+    void UpdateAI(const uint32 diff) override
+    {
+        UpdateTimers(diff);
+
+        if (GetCombatScriptStatus())
+            return;
+
+        PetAI::UpdateAI(diff);
+    }
+};
+
+enum RazorthornActions
+{
+    RAZORTHORN_REND,
+    RAZORTHORN_RAVAGE,
+    RAZORTHORN_ACTION_MAX,
+};
+
+struct npc_razorthorn_ravager : public CombatAI
+{
+    npc_razorthorn_ravager(Creature* creature) : CombatAI(creature, RAZORTHORN_ACTION_MAX)
+    {
+        AddCombatAction(RAZORTHORN_REND, 10000, 15000);
+        AddCombatAction(RAZORTHORN_RAVAGE, 5000, 9000);
+    }
+
+    bool m_charmed;
+
+    void Reset() override
+    {
+
+    }
+
+    bool CanHandleCharm() override { return true; }
+
+    void JustGotCharmed(Unit* /*charmer*/) override
+    {
+        if (CharmInfo* charmInfo = m_creature->GetCharmInfo())
+            charmInfo->SetCharmState(new npc_razorthorn_ravager_pet(m_creature));
+    }
+
+    void ExecuteAction(uint32 action) override
+    {
+        switch (action)
+        {
+            case RAZORTHORN_REND:
+                if (DoCastSpellIfCan(m_creature->GetVictim(), SPELL_REND) == CAST_OK)
+                    ResetCombatAction(action, urand(15000, 20000));
+                break;
+            case RAZORTHORN_RAVAGE:
+                if (DoCastSpellIfCan(m_creature->GetVictim(), SPELL_RAVAGE) == CAST_OK)
+                    ResetCombatAction(action, urand(8000, 12000));
+                break;
+        }
+    }
+};
+
+struct CharmRavager : public AuraScript
+{
+    void OnApply(Aura* aura, bool apply) const override
+    {
+        if (!apply && aura->GetEffIndex() == EFFECT_INDEX_1)
+            if (aura->GetTarget()->IsCreature())
+                static_cast<Creature*>(aura->GetTarget())->ForcedDespawn();
+    }
+};
+
 void AddSC_hellfire_peninsula()
 {
     Script* pNewScript = new Script;
@@ -2145,13 +2448,12 @@ void AddSC_hellfire_peninsula()
 
     pNewScript = new Script;
     pNewScript->Name = "npc_magister_aledis";
-    pNewScript->GetAI = &GetAI_npc_magister_aledis;
+    pNewScript->GetAI = &GetNewAIInstance<npc_magister_aledisAI>;
     pNewScript->RegisterSelf();
 
     pNewScript = new Script;
     pNewScript->Name = "npc_living_flare";
-    pNewScript->GetAI = &GetAI_npc_living_flare;
-    pNewScript->pEffectAuraDummy = &EffectAuraDummy_spell_aura_dummy_living_flare;
+    pNewScript->GetAI = &GetNewAIInstance<npc_living_flareAI>;
     pNewScript->RegisterSelf();
 
     pNewScript = new Script;
@@ -2186,4 +2488,33 @@ void AddSC_hellfire_peninsula()
     pNewScript->Name = "npc_maghar_escort";
     pNewScript->GetAI = &GetAI_npc_maghar_escort;
     pNewScript->RegisterSelf();
+
+    pNewScript = new Script;
+    pNewScript->Name = "go_kaliri_nest";
+    pNewScript->GetGameObjectAI = &GetNewAIInstance<KaliriNest>;
+    pNewScript->RegisterSelf();
+
+    pNewScript = new Script;
+    pNewScript->Name = "go_smoke_beacon";
+    pNewScript->GetGameObjectAI = &GetAI_go_smoke_beacon;
+    pNewScript->RegisterSelf();
+
+    pNewScript = new Script;
+    pNewScript->Name = "npc_credit_marker_they_must_burn";
+    pNewScript->GetAI = &GetAI_npc_credit_marker_they_must_burn;
+    pNewScript->RegisterSelf();
+
+    pNewScript = new Script;
+    pNewScript->Name = "npc_razorthorn_ravager";
+    pNewScript->GetAI = &GetNewAIInstance<npc_razorthorn_ravager>;
+    pNewScript->RegisterSelf();
+
+    RegisterSpellScript<SummonSmokeBeacon>("spell_summon_smoke_beacon");
+    RegisterSpellScript<CursedScarabPeriodicTrigger>("spell_cursed_scarab_periodic");
+    RegisterSpellScript<CursedScarabDespawnPeriodicTrigger>("spell_cursed_scarab_despawn_periodic");
+    RegisterSpellScript<ExposeRazorthornRoot>("spell_razorthorn_root");
+    RegisterAuraScript<CharmRavager>("spell_charm_ravager");
+    RegisterSpellScript<LivingFlareDetonator>("spell_living_flare_detonator");
+    RegisterAuraScript<LivingFlareMaster>("spell_living_flare_master");
+    RegisterAuraScript<LivingFlareUnstable>("spell_living_flare_unstable");
 }

@@ -329,14 +329,23 @@ CreatureList ScriptedAI::DoFindFriendlyCC(float range)
     return creatureList;
 }
 
-CreatureList ScriptedAI::DoFindFriendlyMissingBuff(float range, uint32 spellId)
+CreatureList ScriptedAI::DoFindFriendlyMissingBuff(float range, uint32 spellId, bool inCombat)
 {
     CreatureList creatureList;
+    
+    if (inCombat == false)
+    {
+        MaNGOS::FriendlyMissingBuffInRangeInCombatCheck u_check(m_creature, range, spellId);
+        MaNGOS::CreatureListSearcher<MaNGOS::FriendlyMissingBuffInRangeInCombatCheck> searcher(creatureList, u_check);
+        Cell::VisitGridObjects(m_creature, searcher, range);
+    }
+    else if (inCombat == true)
+    {
+        MaNGOS::FriendlyMissingBuffInRangeNotInCombatCheck u_check(m_creature, range, spellId);
+        MaNGOS::CreatureListSearcher<MaNGOS::FriendlyMissingBuffInRangeNotInCombatCheck> searcher(creatureList, u_check);
 
-    MaNGOS::FriendlyMissingBuffInRangeCheck u_check(m_creature, range, spellId);
-    MaNGOS::CreatureListSearcher<MaNGOS::FriendlyMissingBuffInRangeCheck> searcher(creatureList, u_check);
-
-    Cell::VisitGridObjects(m_creature, searcher, range);
+        Cell::VisitGridObjects(m_creature, searcher, range);
+    }    
 
     return creatureList;
 }
@@ -389,16 +398,6 @@ enum
     NPC_BROODLORD               = 12017,
     NPC_TALON_KING_IKISS        = 18473,
     NPC_KARGATH_BLADEFIST       = 16808,
-    NPC_MOROES                  = 15687,
-    NPC_MOROGRIM_TIDEWALKER     = 21213,
-    NPC_KELIDAN_THE_BREAKER     = 17377,
-    NPC_NAZAN                   = 17536,
-    NPC_VAZRUDEN                = 17537,
-    NPC_LEOTHERAS               = 21215,
-
-    // Black Temple
-    NPC_HIGH_WARLORD_NAJENTUS   = 22887,
-    NPC_GURTOGG_BLOODBOIL       = 22948,
 
     // Zul'Aman
     NPC_AKILZON                 = 23574,
@@ -407,9 +406,7 @@ enum
     NPC_HALAZZI                 = 23577,
     NPC_MALACRASS               = 24239,
 
-    NPC_ANUBARAK                = 29120,
     NPC_SINDRAGOSA              = 36853,
-    NPC_ZARITHRIAN              = 39746,
 };
 
 bool ScriptedAI::EnterEvadeIfOutOfCombatArea(const uint32 diff)
@@ -446,44 +443,8 @@ bool ScriptedAI::EnterEvadeIfOutOfCombatArea(const uint32 diff)
             if (x < 270.0f && x > 185.0f)
                 return false;
             break;
-        case NPC_MOROES:                                    // Moroes - Generate bounding box - TODO: Despawn Remaining Adds upon Evade after Death
-            if (x > -11030.f && x < -10943.f && y > -1955.f && y < -1860.f)
-                return false;
-            break;
-        case NPC_MOROGRIM_TIDEWALKER:                       // Morogrim - Natural Box made by room
-            if (x > 304.12f && x < 457.35f)
-                return false;
-        case NPC_ANUBARAK:
-            if (y < 281.0f && y > 228.0f)
-                return false;
-            break;
         case NPC_SINDRAGOSA:
             if (x > 4314.0f)
-                return false;
-            break;
-        case NPC_ZARITHRIAN:
-            if (z > 87.0f)
-                return false;
-            break;
-        case NPC_KELIDAN_THE_BREAKER:   // out of his room
-            if (y > -158.23)
-                return false;
-            break;
-        case NPC_VAZRUDEN:
-        case NPC_NAZAN:
-            if (x < -1336.0f)
-                return false;
-            break;
-        case NPC_LEOTHERAS:
-            if (x < 409.0f && y > -524.0f &&  x > 300.0f && y < -301.0f)
-                return false;
-            break;
-        case NPC_HIGH_WARLORD_NAJENTUS:
-            if (x > 300.f)
-                return false;
-            break;
-        case NPC_GURTOGG_BLOODBOIL:
-            if (y > 140.f)
                 return false;
             break;
         case NPC_AKILZON:
@@ -513,14 +474,6 @@ bool ScriptedAI::EnterEvadeIfOutOfCombatArea(const uint32 diff)
 
     EnterEvadeMode();
     return true;
-}
-
-void ScriptedAI::DespawnGuids(GuidVector& spawns)
-{
-    for (ObjectGuid& guid : spawns)
-        if (Creature* spawn = m_creature->GetMap()->GetAnyTypeCreature(guid))
-            spawn->ForcedDespawn();
-    spawns.clear();
 }
 
 void Scripted_NoMovementAI::GetAIInformation(ChatHandler& reader)

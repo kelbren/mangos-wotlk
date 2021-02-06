@@ -21,7 +21,7 @@
 
 DROP TABLE IF EXISTS `character_db_version`;
 CREATE TABLE `character_db_version` (
-  `required_14009_01_characters_new_ticket_system_sql_created` bit(1) DEFAULT NULL
+  `required_14030_01_characters_item_instance_duration_default` bit(1) DEFAULT NULL
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8 ROW_FORMAT=DYNAMIC COMMENT='Last applied sql update to DB';
 
 --
@@ -34,6 +34,20 @@ INSERT INTO `character_db_version` VALUES
 (NULL);
 /*!40000 ALTER TABLE `character_db_version` ENABLE KEYS */;
 UNLOCK TABLES;
+
+--
+-- Table structure for table `ahbot_items`
+--
+
+DROP TABLE IF EXISTS `ahbot_items`;
+CREATE TABLE `ahbot_items` (
+  `item` int(11) unsigned NOT NULL DEFAULT '0' COMMENT 'Item Identifier',
+  `value` int(11) unsigned NOT NULL DEFAULT '0' COMMENT 'Item value, a value of 0 bans item from being sold/bought by AHBot',
+  `add_chance` int(11) unsigned NOT NULL DEFAULT '0' COMMENT 'Chance item is added to AH upon bot visit, 0 for normal loot sources',
+  `min_amount` int(11) unsigned NOT NULL DEFAULT '0' COMMENT 'Min amount added, not used when add_chance is 0',
+  `max_amount` int(11) unsigned NOT NULL DEFAULT '0' COMMENT 'Max amount added, not used when add_chance is 0',
+PRIMARY KEY (`item`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 ROW_FORMAT=COMPACT COMMENT='AuctionHouseBot overridden item settings';
 
 --
 -- Table structure for table `account_data`
@@ -406,6 +420,25 @@ CREATE TABLE `character_battleground_data` (
 LOCK TABLES `character_battleground_data` WRITE;
 /*!40000 ALTER TABLE `character_battleground_data` DISABLE KEYS */;
 /*!40000 ALTER TABLE `character_battleground_data` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `character_battleground_random`
+--
+
+DROP TABLE IF EXISTS `character_battleground_random`;
+CREATE TABLE `character_battleground_random` (
+  `guid` int(11) unsigned NOT NULL default '0' COMMENT 'Global Unique Identifier',
+  PRIMARY KEY  (`guid`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 ROW_FORMAT=DYNAMIC COMMENT='Player Battleground System';
+
+--
+-- Dumping data for table `character_battleground_random`
+--
+
+LOCK TABLES `character_battleground_random` WRITE;
+/*!40000 ALTER TABLE `character_battleground_random` DISABLE KEYS */;
+/*!40000 ALTER TABLE `character_battleground_random` ENABLE KEYS */;
 UNLOCK TABLES;
 
 --
@@ -1597,7 +1630,17 @@ DROP TABLE IF EXISTS `item_instance`;
 CREATE TABLE `item_instance` (
   `guid` int(11) unsigned NOT NULL DEFAULT '0',
   `owner_guid` int(11) unsigned NOT NULL DEFAULT '0',
-  `data` longtext,
+  `itemEntry` mediumint(8) unsigned NOT NULL DEFAULT '0',
+  `creatorGuid` int(10) unsigned NOT NULL default '0',
+  `giftCreatorGuid` int(10) unsigned NOT NULL default '0',
+  `count` int(10) unsigned NOT NULL default '1',
+  `duration` int(10) unsigned NOT NULL default '0',
+  `charges` text NOT NULL,
+  `flags` int(8) unsigned NOT NULL default '0',
+  `enchantments` text NOT NULL,
+  `randomPropertyId` smallint(5) NOT NULL default '0',
+  `durability` int(5) unsigned NOT NULL default '0',
+  `playedTime` int(10) unsigned NOT NULL default '0',
   `text` longtext,
   PRIMARY KEY (`guid`),
   KEY `idx_owner_guid` (`owner_guid`)
@@ -2072,6 +2115,7 @@ CREATE TABLE `saved_variables` (
   `NextDailyQuestResetTime` bigint(40) unsigned NOT NULL DEFAULT '0',
   `NextWeeklyQuestResetTime` bigint(40) unsigned NOT NULL DEFAULT '0',
   `NextMonthlyQuestResetTime` bigint(40) unsigned NOT NULL DEFAULT '0',
+  `NextRandomBattlegroundResetTime` bigint(40) unsigned NOT NULL default '0',
   `cleaning_flags` int(11) unsigned NOT NULL DEFAULT '0'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8 ROW_FORMAT=DYNAMIC COMMENT='Variable Saves';
 

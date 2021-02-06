@@ -120,6 +120,7 @@ struct BroadcastText
 
     std::string const& GetText(int32 locIdx, uint8 gender = GENDER_MALE, bool forceGender = false) const
     {
+        ++locIdx; // broadcast text has default at position 0
         if ((gender == GENDER_FEMALE || gender == GENDER_NONE) && (forceGender || !femaleText[DEFAULT_LOCALE].empty()))
         {
             if (locIdx >= 0 && femaleText.size() > size_t(locIdx) && !femaleText[locIdx].empty())
@@ -172,6 +173,7 @@ struct MangosStringLocale
     BroadcastText const* broadcastText;
 };
 
+typedef std::unordered_map<uint32, CreatureSpawnTemplate> CreatureSpawnTemplateMap;
 typedef std::unordered_map<uint32 /*guid*/, CreatureData> CreatureDataMap;
 typedef CreatureDataMap::value_type CreatureDataPair;
 
@@ -513,7 +515,7 @@ class ObjectMgr
 
         std::unordered_map<uint32, std::vector<uint32>> const& GetCreatureSpawnEntry() const { return mCreatureSpawnEntryMap; }
 
-        void LoadGameobjectInfo();
+        std::vector<uint32> LoadGameobjectInfo();
 
         void PackGroupIds();
         Group* GetGroupById(uint32 id) const;
@@ -564,7 +566,7 @@ class ObjectMgr
         void LoadTaxiShortcuts();
         uint32 GetNearestTaxiNode(float x, float y, float z, uint32 mapid, Team team) const;
         void GetTaxiPath(uint32 source, uint32 destination, uint32& path, uint32& cost) const;
-        uint32 GetTaxiMountDisplayId(uint32 id, Team team, bool allowed_alt_team = false) const;
+        uint32 GetTaxiMountDisplayId(uint32 id, Team team) const;
 
         Quest const* GetQuestTemplate(uint32 quest_id) const
         {
@@ -675,6 +677,8 @@ class ObjectMgr
             return nullptr;
         }
 
+        CreatureTemplateSpells const* GetCreatureTemplateSpellSet(uint32 entry, uint32 setId) const;
+
         // Static wrappers for various accessors
         static GameObjectInfo const* GetGameObjectInfo(uint32 id);                  ///< Wrapper for sGOStorage.LookupEntry
         static Player* GetPlayer(const char* name);         ///< Wrapper for ObjectAccessor::FindPlayerByName
@@ -713,6 +717,7 @@ class ObjectMgr
         void LoadCreatureAddons();
         void LoadCreatureClassLvlStats();
         void LoadCreatureConditionalSpawn();
+        void LoadCreatureSpawnDataTemplates();
         void LoadCreatureSpawnEntry();
         void LoadCreatureModelInfo();
         void LoadCreatureModelRace();
@@ -856,6 +861,12 @@ class ObjectMgr
         {
             CreatureDataPair const* dataPair = GetCreatureDataPair(guid);
             return dataPair ? &dataPair->second : nullptr;
+        }
+
+        CreatureSpawnTemplate const* GetCreatureSpawnTemplate(uint32 entry) const
+        {
+            auto itr = m_creatureSpawnTemplateMap.find(entry);
+            return itr != m_creatureSpawnTemplateMap.end() ? &(*itr).second : nullptr;
         }
 
         CreatureData* GetCreatureData(uint32 guid)
@@ -1007,9 +1018,13 @@ class ObjectMgr
         }
 
         const char* GetMangosString(int32 entry, int locale_idx) const;
-        const char* GetMangosStringForDBCLocale(int32 entry) const { return GetMangosString(entry, DBCLocaleIndex); }
-        int32 GetDBCLocaleIndex() const { return DBCLocaleIndex; }
-        void SetDBCLocaleIndex(uint32 lang) { DBCLocaleIndex = GetIndexForLocale(LocaleConstant(lang)); }
+        inline const char* GetMangosStringForDbcLocale(int32 entry) const { return GetMangosString(entry, m_Dbc2StorageLocaleIndex); }
+
+        int GetDbc2StorageLocaleIndex() const { return m_Dbc2StorageLocaleIndex; }
+        void SetDbc2StorageLocaleIndex(LocaleConstant loc) { m_Dbc2StorageLocaleIndex = GetStorageLocaleIndexFor(loc); }
+
+        int GetStorageLocaleIndexFor(LocaleConstant loc);
+        int GetOrNewStorageLocaleIndexFor(LocaleConstant loc);
 
         // global grid objects state (static DB spawns, global spawn mods from gameevent system)
         CellObjectGuids const& GetCellObjectGuids(uint16 mapid, uint8 spawnMode, uint32 cell_id)
@@ -1038,9 +1053,6 @@ class ObjectMgr
         static bool IsValidCharterName(const std::string& name);
 
         static bool CheckDeclinedNames(const std::wstring& mainpart, DeclinedName const& names);
-
-        int GetIndexForLocale(LocaleConstant loc);
-        LocaleConstant GetLocaleForIndex(int i);
 
         // Check if a player meets condition conditionId
         bool IsConditionSatisfied(uint32 conditionId, WorldObject const* target, Map const* map, WorldObject const* source, ConditionSource conditionSourceType) const;
@@ -1105,8 +1117,6 @@ class ObjectMgr
         void AddVendorItem(uint32 entry, uint32 item, uint32 maxcount, uint32 incrtime, uint32 extendedcost);
         bool RemoveVendorItem(uint32 entry, uint32 item);
         bool IsVendorItemValid(bool isTemplate, char const* tableName, uint32 vendor_entry, uint32 item_id, uint32 maxcount, uint32 incrtime, uint32 ExtendedCost, uint16 conditionId, Player* pl = nullptr, std::set<uint32>* skip_vendors = nullptr) const;
-
-        int GetOrNewIndexForLocale(LocaleConstant loc);
 
         SpellClickInfoMapBounds GetSpellClickInfoMapBounds(uint32 creature_id) const
         {
@@ -1190,6 +1200,7 @@ class ObjectMgr
                 return 0;
             return urand(itrSpell->second.first, itrSpell->second.second);
         }
+        void AddCreatureCooldown(uint32 entry, uint32 spellId, uint32 min, uint32 max);
 
         uint32 GetModelForRace(uint32 sourceModelId, uint32 racemask);
         /**
@@ -1205,7 +1216,13 @@ class ObjectMgr
         * Qualifier: const
         **/
         CreatureClassLvlStats const* GetCreatureClassLvlStats(uint32 level, uint32 unitClass, int32 expansion) const;
+
+        // Transports
+        std::vector<std::pair<TypeID, uint32>> const& GetDbGuidsForTransport(uint32 mapId) const;
     protected:
+
+        // current locale settings
+        uint8   m_Dbc2StorageLocaleIndex;
 
         // first free id for selected id type
         IdGenerator<uint32> m_ArenaTeamIds;
@@ -1288,8 +1305,6 @@ class ObjectMgr
         QuestRelationsMap       m_GOQuestRelations;
         QuestRelationsMap       m_GOQuestInvolvedRelations;
 
-        int DBCLocaleIndex;
-
     private:
         void LoadCreatureAddons(SQLStorage& creatureaddons, char const* entryName, char const* comment);
         void ConvertCreatureAddonAuras(CreatureDataAddon* addon, char const* table, char const* guidEntryStr);
@@ -1328,13 +1343,15 @@ class ObjectMgr
         HalfNameMap PetHalfName0;
         HalfNameMap PetHalfName1;
 
-        typedef std::multimap<uint32 /*mapId*/, uint32 /*guid*/> ActiveCreatureGuidsOnMap;
+        typedef std::multimap<uint32 /*mapId*/, uint32 /*guid*/> ActiveObjectGuidsOnMap;
 
         // Array to store creature stats, Max creature level + 1 (for data alignement with in game level)
         CreatureClassLvlStats m_creatureClassLvlStats[DEFAULT_MAX_CREATURE_LEVEL + 1][MAX_CREATURE_CLASS][MAX_EXPANSION + 1];
 
         MapObjectGuids mMapObjectGuids;
-        ActiveCreatureGuidsOnMap m_activeCreatures;
+        ActiveObjectGuidsOnMap m_activeCreatures;
+        ActiveObjectGuidsOnMap m_activeGameObjects;
+        CreatureSpawnTemplateMap m_creatureSpawnTemplateMap;
         CreatureDataMap mCreatureDataMap;
         CreatureLocaleMap mCreatureLocaleMap;
         std::unordered_map<uint32, std::unordered_map<uint32, std::pair<uint32, uint32>>> m_creatureCooldownMap;
@@ -1348,6 +1365,9 @@ class ObjectMgr
         std::map<int32 /*minEntryOfBracket*/, uint32 /*count*/> m_loadedStringCount;
         GossipMenuItemsLocaleMap mGossipMenuItemsLocaleMap;
         PointOfInterestLocaleMap mPointOfInterestLocaleMap;
+
+        std::unordered_map<uint32, std::unordered_map<uint32, CreatureTemplateSpells>> m_creatureTemplateSpells;
+
         DungeonEncounterMap m_DungeonEncounters;
 
         QuestgiverGreetingMap m_questgiverGreetingMap[QUESTGIVER_TYPE_MAX];
@@ -1364,6 +1384,9 @@ class ObjectMgr
         CacheTrainerSpellMap m_mCacheTrainerSpellMap;
 
         BroadcastTextMap m_broadcastTextMap;
+
+        std::map<uint32, uint32> m_transportMaps;
+        std::map<uint32, std::vector<std::pair<TypeID, uint32>>> m_guidsForMap; // used for transports only atm
 };
 
 #define sObjectMgr MaNGOS::Singleton<ObjectMgr>::Instance()
