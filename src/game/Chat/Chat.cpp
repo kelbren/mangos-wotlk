@@ -299,7 +299,7 @@ ChatCommand* ChatHandler::getCommandTable()
         { "fly",            SEC_ADMINISTRATOR,  false, &ChatHandler::HandleGMFlyCommand,               "", nullptr },
         { "ingame",         SEC_ADMINISTRATOR,  true,  &ChatHandler::HandleGMListIngameCommand,        "", nullptr },
         { "list",           SEC_ADMINISTRATOR,  true,  &ChatHandler::HandleGMListFullCommand,          "", nullptr },
-        { "mountup",        SEC_MODERATOR,      false, &ChatHandler::HandleGMMountUpCommand,           "", nullptr },
+        { "mountup",        SEC_ADMINISTRATOR,  false, &ChatHandler::HandleGMMountUpCommand,           "", nullptr },
         { "visible",        SEC_ADMINISTRATOR,  false, &ChatHandler::HandleGMVisibleCommand,           "", nullptr },
         { "setview",        SEC_ADMINISTRATOR,  false, &ChatHandler::HandleSetViewCommand,             "", nullptr },
         { "",               SEC_ADMINISTRATOR,  false, &ChatHandler::HandleGMCommand,                  "", nullptr },
@@ -3712,7 +3712,7 @@ void ChatHandler::BuildChatPacket(WorldPacket& data, ChatMsg msgtype, char const
         case CHAT_MSG_MONSTER_EMOTE:
         case CHAT_MSG_RAID_BOSS_WHISPER:
         case CHAT_MSG_RAID_BOSS_EMOTE:
-        case CHAT_MSG_BATTLENET:
+        case CHAT_MSG_BNET:
         case CHAT_MSG_WHISPER_FOREIGN:
             MANGOS_ASSERT(senderName);
             data << uint32(strlen(senderName) + 1);

@@ -694,6 +694,41 @@ struct ChatChannelsEntry
     // 36 string flags
 };
 
+struct CharacterFacialHairStylesEntry
+{
+    uint32 RaceID;                                          // 0
+    uint32 SexID;                                           // 1
+    uint32 VariationID;                                     // 2
+  //uint32 Geoset[5];                                       // 3-7
+};
+
+enum CharSectionFlags
+{
+    SECTION_FLAG_PLAYABLE = 0x01,
+};
+
+enum CharSectionType
+{
+    SECTION_TYPE_SKIN = 0,
+    SECTION_TYPE_FACE = 1,
+    SECTION_TYPE_FACIAL_HAIR = 2,
+    SECTION_TYPE_HAIR = 3,
+    SECTION_TYPE_UNDERWEAR = 4
+};
+
+struct CharSectionsEntry
+{
+    //uint32 Id;
+    uint32 Race;
+    uint32 Gender;
+    uint32 BaseSection;
+    //char* TexturePath[3];
+    uint32 Flags;
+    uint32 VariationIndex;
+    uint32 Color;
+    inline bool HasFlag(CharSectionFlags flag) const { return (Flags & flag) != 0; }
+};
+
 struct ChrClassesEntry
 {
     uint32  ClassID;                                        // 0        m_ID
@@ -759,7 +794,7 @@ struct CinematicSequencesEntry
 struct CreatureDisplayInfoEntry
 {
     uint32      Displayid;                                  // 0        m_ID
-    uint32      ModelId;                                    // 1        
+    uint32      ModelId;                                    // 1
     // 2        m_soundID
     uint32      ExtendedDisplayInfoID;                      // 3        m_extendedDisplayInfoID -> CreatureDisplayInfoExtraEntry::DisplayExtraId
     float       scale;                                      // 4        m_creatureModelScale
@@ -1185,7 +1220,7 @@ struct HolidaysEntry
     uint32 ID;                                              // 0        m_ID
     // uint32 duration[10];                                 // 1-10     m_duration
     // uint32 date[26];                                     // 11-36    m_date (dates in unix time starting at January, 1, 2000)
-    // uint32 region;                                       // 37       m_region (wow region)
+    // uint32 region;                                       // 37       m_region (region)
     // uint32 looping;                                      // 38       m_looping
     // uint32 calendarFlags[10];                            // 39-48    m_calendarFlags
     // uint32 holidayNameId;                                // 49       m_holidayNameID (HolidayNames.dbc)

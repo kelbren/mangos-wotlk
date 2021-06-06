@@ -566,6 +566,7 @@ enum AtLoginFlags
     AT_LOGIN_RESET_PET_TALENTS  = 0x10,
     AT_LOGIN_FIRST              = 0x20,
     AT_LOGIN_RESET_TAXINODES    = 0x40,
+    AT_LOGIN_ADD_BG_DESERTER    = 0x80
 };
 
 typedef std::map<uint32, QuestStatusData> QuestStatusMap;
@@ -2084,7 +2085,7 @@ class Player : public Unit
 
         void SendAurasForTarget(Unit* target) const;
 
-        PlayerMenu* PlayerTalkClass;
+        PlayerMenu* GetPlayerMenu() const { return m_playerMenu.get(); }
         std::vector<ItemSetEffect*> ItemSetEff;
 
         /*********************************************************/
@@ -2230,6 +2231,9 @@ class Player : public Unit
 
         uint32 EnvironmentalDamage(EnviromentalDamage type, uint32 damage);
 
+        void SendWeatherUpdate(uint32 weatherId, uint32 weatherGrade) const;
+        void SendOverrideLightUpdate(uint32 lightId, uint32 fadeInTime) const;
+
         /*********************************************************/
         /***               FLOOD FILTER SYSTEM                 ***/
         /*********************************************************/
@@ -2313,6 +2317,7 @@ class Player : public Unit
         bool HasAtLoginFlag(AtLoginFlags f) const { return (m_atLoginFlags & f) != 0; }
         void SetAtLoginFlag(AtLoginFlags f) { m_atLoginFlags |= f; }
         void RemoveAtLoginFlag(AtLoginFlags f, bool in_db_also = false);
+        static bool ValidateAppearance(uint8 race, uint8 class_, uint8 gender, uint8 hairID, uint8 hairColor, uint8 faceID, uint8 facialHair, uint8 skinColor, bool create = false);
 
         // Temporarily removed pet cache
         uint32 GetTemporaryUnsummonedPetNumber() const { return m_temporaryUnsummonedPetNumber; }
@@ -2754,6 +2759,7 @@ class Player : public Unit
 
         GridReference<Player> m_gridRef;
         MapReference m_mapRef;
+        std::unique_ptr<PlayerMenu> m_playerMenu;
 
 #ifdef BUILD_PLAYERBOT
         PlayerbotAI* m_playerbotAI;

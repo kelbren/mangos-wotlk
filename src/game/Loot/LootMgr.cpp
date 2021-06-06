@@ -459,7 +459,7 @@ LootSlotType LootItem::GetSlotTypeForSharedLoot(Player const* player, Loot const
                 if (!isUnderThreshold && lootItemType == LOOTITEM_TYPE_CONDITIONNAL && loot->m_lootMethod == MASTER_LOOT)
                     break;
 
-                if (loot->m_isChest)
+                if (loot->m_isChest || loot->m_lootType == LOOT_FISHINGHOLE)
                     return LOOT_SLOT_OWNER;
 
                 if (isBlocked)
@@ -481,7 +481,7 @@ LootSlotType LootItem::GetSlotTypeForSharedLoot(Player const* player, Loot const
         {
             if (!isBlocked)
             {
-                if (loot->m_isChest)
+                if (loot->m_isChest || loot->m_lootType == LOOT_FISHINGHOLE)
                     return LOOT_SLOT_NORMAL;
 
                 if (isReleased || currentLooterPass || player->GetObjectGuid() == loot->m_currentLooterGuid)
@@ -515,7 +515,7 @@ LootSlotType LootItem::GetSlotTypeForSharedLoot(Player const* player, Loot const
         }
         case ROUND_ROBIN:
         {
-            if (loot->m_isChest)
+            if (loot->m_isChest || loot->m_lootType == LOOT_FISHINGHOLE)
                 return LOOT_SLOT_NORMAL;
 
             if (isReleased || currentLooterPass || player->GetObjectGuid() == loot->m_currentLooterGuid)
@@ -861,12 +861,11 @@ void GroupLootRoll::Finish(RollVoteMap::const_iterator& winnerItr)
             if (winnerItr->second.vote == ROLL_DISENCHANT)
             {
                 m_lootItem->isReleased = true;
-                m_lootItem->allowedGuid.clear();                
-                ItemPrototype const* pProto = sObjectMgr.GetItemPrototype(m_lootItem->itemId);
-                ItemPosCountVec dest;
-                InventoryResult msg = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, m_lootItem->itemId, m_lootItem->count);
-                Loot loot;
-                loot.FillLoot(pProto->DisenchantID, LootTemplates_Disenchant, player, true);
+                m_lootItem->allowedGuid.clear();
+                
+                ItemPrototype const* pProto = sObjectMgr.GetItemPrototype(m_lootItem->itemId);                   
+                Loot loot(player, pProto->DisenchantID, LOOT_DISENCHANTING);
+
                 if (!loot.AutoStore(player, true))
                 {
                     LootItemList itemList;
@@ -1102,6 +1101,9 @@ bool Loot::CanLoot(Player const* player)
         return true;
 
     if (m_lootMethod == NOT_GROUP_TYPE_LOOT || m_lootMethod == FREE_FOR_ALL)
+        return true;
+
+    if (m_lootType == LOOT_FISHINGHOLE)
         return true;
 
     if (m_haveItemOverThreshold)
@@ -2004,6 +2006,10 @@ Loot::Loot(Player* player, uint32 id, LootType type) :
             FillLoot(id, LootTemplates_Spell, player, true, true);
             m_clientLootType = CLIENT_LOOT_PICKPOCKETING;
             break;
+        case LOOT_DISENCHANTING:
+            FillLoot(id, LootTemplates_Disenchant, player, true, true);
+            m_clientLootType = CLIENT_LOOT_PICKPOCKETING;
+            break;            
         default:
             sLog.outError("Loot::Loot> invalid loot type passed to loot constructor.");
             break;

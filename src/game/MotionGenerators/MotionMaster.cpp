@@ -39,6 +39,10 @@
 #include "Maps/TransportSystem.h"
 #include "Metric/Metric.h"
 
+#ifdef BUILD_METRICS
+ #include "Metric/Metric.h"
+#endif
+
 #include <cassert>
 
 inline bool isStatic(MovementGenerator* mv)
@@ -48,6 +52,7 @@ inline bool isStatic(MovementGenerator* mv)
 
 void MotionMaster::Initialize()
 {
+#ifdef BUILD_METRICS
     metric::duration<std::chrono::microseconds> meas("motionmaster.initialize", {
         { "entry", std::to_string(m_owner->GetEntry()) },
         { "guid", std::to_string(m_owner->GetGUIDLow()) },
@@ -55,7 +60,7 @@ void MotionMaster::Initialize()
         { "map_id", std::to_string(m_owner->GetMapId()) },
         { "instance_id", std::to_string(m_owner->GetInstanceId()) }
     }, 1000);
-
+#endif
     // stop current move
     m_owner->StopMoving();
 
@@ -92,7 +97,7 @@ void MotionMaster::UpdateMotion(uint32 diff)
 {
     if (m_owner->hasUnitState(UNIT_STAT_CAN_NOT_MOVE))
         return;
-
+#ifdef BUILD_METRICS
     metric::duration<std::chrono::microseconds> meas("motionmaster.updatemotion", {
         { "entry", std::to_string(m_owner->GetEntry()) },
         { "guid", std::to_string(m_owner->GetGUIDLow()) },
@@ -100,6 +105,7 @@ void MotionMaster::UpdateMotion(uint32 diff)
         { "map_id", std::to_string(m_owner->GetMapId()) },
         { "instance_id", std::to_string(m_owner->GetInstanceId()) }
     }, 1000);
+#endif
 
     MANGOS_ASSERT(!empty());
     m_cleanFlag |= MMCF_UPDATE;
@@ -333,7 +339,7 @@ void MotionMaster::DistanceYourself(float dist)
     }
 }
 
-void MotionMaster::MoveFollow(Unit* target, float dist, float angle, bool asMain)
+void MotionMaster::MoveFollow(Unit* target, float dist, float angle, bool asMain/* = false*/, bool alwaysBoost/* = false*/)
 {
     if (m_owner->hasUnitState(UNIT_STAT_LOST_CONTROL))
         return;
@@ -349,7 +355,7 @@ void MotionMaster::MoveFollow(Unit* target, float dist, float angle, bool asMain
 
     DEBUG_FILTER_LOG(LOG_FILTER_AI_AND_MOVEGENSS, "%s follow to %s", m_owner->GetGuidStr().c_str(), target->GetGuidStr().c_str());
 
-    Mutate(new FollowMovementGenerator(*target, dist, angle, asMain, m_owner->IsPlayer() && !m_owner->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED)));
+    Mutate(new FollowMovementGenerator(*target, dist, angle, asMain, (m_owner->IsPlayer() && !m_owner->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED)), alwaysBoost));
 }
 
 void MotionMaster::MoveStay(float x, float y, float z, float o, bool asMain)
@@ -510,7 +516,7 @@ void MotionMaster::MoveCharge(Unit& target, float speed, uint32 id/* = EVENT_CHA
     Mutate(new EffectMovementGenerator(init, id, false));
 }
 
-void MotionMaster::MoveFall()
+bool MotionMaster::MoveFall()
 {
     const float x = m_owner->GetPositionX(), y = m_owner->GetPositionY(), z = m_owner->GetPositionZ();
 
@@ -520,17 +526,18 @@ void MotionMaster::MoveFall()
     if (tz <= INVALID_HEIGHT)
     {
         DEBUG_LOG("MotionMaster::MoveFall: unable retrive a proper height at map %u (x: %f, y: %f, z: %f).", m_owner->GetMap()->GetId(), x, y, z);
-        return;
+        return false;
     }
 
     // Abort too if the ground is very near
-    if (fabs(z - tz) < 0.1f)
-        return;
+    if (fabs(z - tz) < MOVE_FALL_MIN_FALL_DISTANCE)
+        return false;
 
     Movement::MoveSplineInit init(*m_owner);
     init.MoveTo(x, y, tz);
     init.SetFall();
     Mutate(new EffectMovementGenerator(init, EVENT_JUMP));
+    return true;
 }
 
 void MotionMaster::MoveJump(float x, float y, float z, float horizontalSpeed, float max_height, uint32 id/*= EVENT_JUMP*/)

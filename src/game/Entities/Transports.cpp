@@ -133,16 +133,16 @@ bool Transport::IsSpawnedByDefault(uint32 entry, Team team)
     {
         case 201598:        // Halls of Reflection - alliance
         case 201580:        // ICC raid - Skybreaker - alliance
-        case 201581:        // ICC raid - Orgrim's Hammer - alliance
             if (team == HORDE)
                 return false;
             break;
         case 201599:        // Halls of Reflection - horde
-        case 201811:        // ICC Raid - Skybreaker - horde
         case 201812:        // ICC Raid - Orgrim's Hammer - horde
             if (team == ALLIANCE)
                 return false;
             break;
+        case 201581:        // ICC raid - Orgrim's Hammer - alliance
+        case 201811:        // ICC Raid - Skybreaker - horde
         case 201834:        // ICC zeppelin after gunship fight
             return false;
     }
@@ -234,6 +234,8 @@ bool Transport::Create(uint32 guidlow, uint32 mapid, float x, float y, float z, 
     SetUInt16Value(GAMEOBJECT_DYNAMIC, 1, dynamicHighValue);
 
     SetName(goinfo->name);
+
+    GetVisibilityData().SetVisibilityDistanceOverride(VisibilityDistanceType::Gigantic);
 
     return true;
 }
@@ -806,12 +808,14 @@ void Transport::UpdateForMap(Map const* targetMap, bool newMap)
     {
         for (const auto& itr : pl)
         {
-            if (this != itr.getSource()->GetTransport())
+            Player* player = itr.getSource();
+            if (this != player->GetTransport())
             {
                 UpdateData updateData;
-                BuildCreateUpdateBlockForPlayer(&updateData, itr.getSource());
+                BuildCreateUpdateBlockForPlayer(&updateData, player);
                 WorldPacket packet = updateData.BuildPacket(0); // always only one packet
-                itr.getSource()->SendDirectMessage(packet);
+                player->SendDirectMessage(packet);
+                player->m_clientGUIDs.insert(this->GetObjectGuid());
             }
         }
     }
@@ -821,8 +825,14 @@ void Transport::UpdateForMap(Map const* targetMap, bool newMap)
         BuildOutOfRangeUpdateBlock(&updateData);
         WorldPacket packet = updateData.BuildPacket(0); // always only one packet
         for (const auto& itr : pl)
-            if (this != itr.getSource()->GetTransport())
-                itr.getSource()->SendDirectMessage(packet);
+        {
+            Player* player = itr.getSource();
+            if (this != player->GetTransport())
+            {
+                player->SendDirectMessage(packet);
+                player->m_clientGUIDs.erase(this->GetObjectGuid());
+            }
+        }
     }
 }
 

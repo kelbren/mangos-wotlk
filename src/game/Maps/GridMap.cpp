@@ -922,7 +922,7 @@ bool TerrainInfo::IsOutdoors(float x, float y, float z) const
         return true;
 
     AreaTableEntry const* atEntry = nullptr;
-    WMOAreaTableEntry const* wmoEntry = nullptr;
+    WMOAreaTableEntry const* foundWmoEntry = nullptr;
     auto wmoEntries = GetWMOAreaTableEntriesByTripple(rootId, adtId, groupId);
     for (auto wmoEntry : wmoEntries)
     {
@@ -931,11 +931,11 @@ bool TerrainInfo::IsOutdoors(float x, float y, float z) const
         {
             DEBUG_LOG("Got WMOAreaTableEntry! flag %u, areaid %u", wmoEntry->Flags, wmoEntry->areaId);
             atEntry = areaEntry;
-            wmoEntry = wmoEntry;
+            foundWmoEntry = wmoEntry;
         }
     }
 
-    return IsOutdoorWMO(mogpFlags, wmoEntry, atEntry);
+    return IsOutdoorWMO(mogpFlags, foundWmoEntry, atEntry);
 }
 
 bool TerrainInfo::GetAreaInfo(float x, float y, float z, uint32& flags, int32& adtId, int32& rootId, int32& groupId) const
@@ -961,7 +961,7 @@ uint16 TerrainInfo::GetAreaFlag(float x, float y, float z, bool* isOutdoors) con
 {
     uint32 mogpFlags;
     int32 adtId, rootId, groupId;
-    WMOAreaTableEntry const* wmoEntry = nullptr;
+    WMOAreaTableEntry const* foundWmoEntry = nullptr;
     AreaTableEntry const* atEntry = nullptr;
     bool haveAreaInfo = false;
 
@@ -975,7 +975,7 @@ uint16 TerrainInfo::GetAreaFlag(float x, float y, float z, bool* isOutdoors) con
             if (areaEntry && areaEntry->mapid == GetMapId())
             {
                 atEntry = areaEntry;
-                wmoEntry = wmoEntry;
+                foundWmoEntry = wmoEntry;
             }
         }
     }
@@ -995,7 +995,7 @@ uint16 TerrainInfo::GetAreaFlag(float x, float y, float z, bool* isOutdoors) con
     if (isOutdoors)
     {
         if (haveAreaInfo)
-            *isOutdoors = IsOutdoorWMO(mogpFlags, wmoEntry, atEntry);
+            *isOutdoors = IsOutdoorWMO(mogpFlags, foundWmoEntry, atEntry);
         else
             *isOutdoors = true;
     }

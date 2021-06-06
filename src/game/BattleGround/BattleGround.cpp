@@ -331,6 +331,9 @@ void BattleGround::Update(uint32 diff)
         {
             if (itr->second.offlineRemoveTime <= sWorld.GetGameTime())
             {
+                // add deserter at next login
+                CharacterDatabase.PExecute("UPDATE characters SET at_login = at_login | '%u' WHERE guid = '%u'", uint32(AT_LOGIN_ADD_BG_DESERTER), itr->first.GetCounter());
+
                 RemovePlayerAtLeave(itr->first, true, true);// remove player from BG
                 m_offlineQueue.pop_front();                 // remove from offline queue
                 // do not use itr for anything, because it is erased in RemovePlayerAtLeave()
@@ -1246,6 +1249,9 @@ void BattleGround::RewardQuestComplete(Player* player)
             break;
         case BATTLEGROUND_IC:
             RewardSpellCast(player, SPELL_IC_QUEST_REWARD);
+            break;
+
+        default:
             break;
     }
 }

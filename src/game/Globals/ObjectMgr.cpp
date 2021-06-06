@@ -1350,7 +1350,7 @@ void ObjectMgr::LoadCreatureSpawnDataTemplates()
         sLog.outString();
         return;
     }
-    
+
     BarGoLink bar(result->GetRowCount());
 
     uint32 count = 0;
@@ -1365,7 +1365,7 @@ void ObjectMgr::LoadCreatureSpawnDataTemplates()
         int64 unitFlags =   int64(fields[1].GetUInt64());
         uint32 faction =    fields[2].GetUInt32();
         uint32 modelId =    fields[3].GetUInt32();
-        uint32 equipmentId = fields[4].GetUInt32();
+        int32 equipmentId = fields[4].GetInt32();
         uint32 curHealth =  fields[5].GetUInt32();
         uint32 curMana =    fields[6].GetUInt32();
         uint32 spawnFlags = fields[7].GetUInt32();
@@ -5304,7 +5304,7 @@ void ObjectMgr::LoadGossipText()
     sLog.outString();
 
     result.reset(WorldDatabase.Query("SELECT Id,Prob0,Prob1,Prob2,Prob3,Prob4,Prob5,Prob6,Prob7,BroadcastTextId0,BroadcastTextId1,BroadcastTextId2,BroadcastTextId3,BroadcastTextId4,BroadcastTextId5,BroadcastTextId6,BroadcastTextId7 FROM npc_text_broadcast_text"));
-    
+
     count = 0;
     if (!result)
     {
@@ -6382,7 +6382,7 @@ uint32 ObjectMgr::GraveyardLinkKey(uint32 locationId, uint32 linkKind)
  *
  * \param linkKind  The kind of the graveyard link to be added. Kind is either
  *                  GRAVEYARD_MAPLINK or GRAVEYARD_AREALINK
- * 
+ *
  * \param team      The team that is allowed to use this graveyard link. Can be
  *                  TEAM_BOTH_ALLOWED, HORDE or ALLIANCE.
  *
@@ -7112,11 +7112,14 @@ std::vector<uint32> ObjectMgr::LoadGameobjectInfo()
                         sLog.outErrorDb("Gameobject (Entry: %u GoType: %u) have data0=%u but TaxiPath (Id: %u) not exist.",
                                         goInfo->id, goInfo->type, goInfo->moTransport.taxiPathId, goInfo->moTransport.taxiPathId);
                 }
-                transportDisplayIds.push_back(goInfo->displayId);
-                if (goInfo->moTransport.mapID)
+                if (goInfo->displayId != 462 && goInfo->displayId != 562)
                 {
-                    m_guidsForMap[goInfo->moTransport.mapID];
-                    m_transportMaps.emplace(goInfo->moTransport.mapID, goInfo->id);
+                    transportDisplayIds.push_back(goInfo->displayId);
+                    if (goInfo->moTransport.mapID)
+                    {
+                        m_guidsForMap[goInfo->moTransport.mapID];
+                        m_transportMaps.emplace(goInfo->moTransport.mapID, goInfo->id);
+                    }
                 }
                 break;
             }
@@ -8035,7 +8038,7 @@ void ObjectMgr::LoadBroadcastTextLocales()
     sLog.outString(">> Loaded %u texts from %s", count, "broadcast_text_locale");
     sLog.outString();
 }
- 
+
 void ObjectMgr::DeleteCreatureData(uint32 guid)
 {
     // remove mapid*cellid -> guid_set map
@@ -9972,7 +9975,6 @@ void ObjectMgr::LoadCreatureTemplateSpells()
 
             templateSpells.entry = fields[0].GetUInt32();
             templateSpells.setId = fields[1].GetUInt32();
-            templateSpells.spells[CREATURE_MAX_SPELLS];
             for (uint32 i = 0; i < CREATURE_MAX_SPELLS; ++i)
                 templateSpells.spells[i] = fields[2 + i].GetUInt32();
 

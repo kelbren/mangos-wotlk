@@ -13,6 +13,7 @@ INSERT INTO spell_scripts(Id, ScriptName) VALUES
 (794,'spell_initialize_images'),
 (802,'spell_mutate_bug'),
 (1121,'spell_entangle_fankriss'),
+(2400,'spell_anubisath_share_powers'),
 (3730,'spell_initialize_image'),
 (7054,'spell_forsaken_skill'),
 (12639,'spell_summon_hakkar'),
@@ -20,6 +21,7 @@ INSERT INTO spell_scripts(Id, ScriptName) VALUES
 (13278,'spell_gdr_channel'),
 (13493,'spell_gdr_periodic'),
 (16380,'spell_greater_invisibility_mob'),
+(17016,'spell_placing_beacon_torch'),
 (17244,'spell_anastari_possess'),
 (19832,'spell_possess_razorgore'),
 (19872,'spell_calm_dragonkin'),
@@ -27,8 +29,12 @@ INSERT INTO spell_scripts(Id, ScriptName) VALUES
 (20038,'spell_explosion_razorgore'),
 (21651,'spell_opening_capping'),
 (23226,'spell_ritual_candle_aura'),
+(24693,'spell_hakkar_power_down'),
 (25684,'spell_summon_mana_fiends_moam'),
+(25885,'spell_viscidus_summon_globs'),
+(25926,'spell_viscidus_frost_weakness'),
 (25937,'spell_viscidus_freeze'),
+(26003,'spell_viscidus_suicide'),
 (26009,'spell_cthun_periodic_rotate'),
 (26084,'spell_aq_whirlwind'),
 (26136,'spell_cthun_periodic_rotate'),
@@ -44,12 +50,15 @@ INSERT INTO spell_scripts(Id, ScriptName) VALUES
 (26398,'spell_cthun_tentacles_summon'),
 (26476,'spell_cthun_digestive_acid_periodic'),
 (26584,'spell_summon_toxic_slime'),
+(26585,'spell_viscidus_despawn_adds'),
 (26591,'spell_teleport_image'),
+(26608,'spell_viscidus_despawn_adds'),
 (26619,'spell_periodic_scarab_trigger'),
 (26686,'spell_aq_whirlwind'),
 (26767,'spell_cthun_tentacles_summon'),
 (26769,'spell_cthun_periodic_eye_trigger'),
-(28282,'spell_ashbringer_item');
+(28282,'spell_ashbringer_item'),
+(28441,'spell_ab_effect_000');
 
 -- TBC
 INSERT INTO spell_scripts(Id, ScriptName) VALUES
@@ -236,6 +245,9 @@ INSERT INTO spell_scripts(Id, ScriptName) VALUES
 (43770,'spell_grappling_hook'),
 (43789,'spell_grappling_beam'),
 (47028,'spell_taunka_face_me'),
+(47031,'spell_tag_troll'),
+(47035,'spell_out_cold'),
+(47042,'spell_assemble_cage'),
 (47374,'spell_ley_line_focus_ring'),
 (47469,'spell_ley_line_focus_ring'),
 (47574,'spell_freezing_cloud_aura'),
@@ -254,6 +266,7 @@ INSERT INTO spell_scripts(Id, ScriptName) VALUES
 (48385,'spell_create_spirit_fount_beam_aura'),
 (48590,'spell_avenging_spirits'),
 (50442,'spell_crystal_spike_visual_aura'),
+(50471,'spell_escape_from_silverbrook_credit_master'),
 (50546,'spell_ley_line_focus_item_trigger'),
 (50547,'spell_ley_line_focus_item_trigger'),
 (50548,'spell_ley_line_focus_item_trigger'),
@@ -274,6 +287,7 @@ INSERT INTO spell_scripts(Id, ScriptName) VALUES
 (49461,'spell_call_oculus_drake'),
 (49462,'spell_call_oculus_drake'),
 (49464,'spell_ride_oculus_drake_saddle'),
+(49546,'spell_eagle_eyes'),
 (50255,'spell_poisoned_spear'),
 (50550,'spell_parachute_aura'),
 (50563,'spell_carve_stone_aura'),
@@ -300,7 +314,9 @@ INSERT INTO spell_scripts(Id, ScriptName) VALUES
 (52479,'spell_gift_of_the_harvester'),
 (52519,'spell_ghoulplosion'),
 (52555,'spell_dispel_scarlet_ghoul_credit'),
+(52588,'spell_skeletal_gryphon_escape'),
 (52694,'spell_recall_eye_of_acherus'),
+(52751,'spell_death_gate'),
 (52942,'spell_pulsing_shockwave'),
 (53035,'spell_summon_anubar_periodic_aura'),
 (53036,'spell_summon_anubar_periodic_aura'),
@@ -364,18 +380,26 @@ INSERT INTO spell_scripts(Id, ScriptName) VALUES
 (67590,'spell_powering_up'),
 (67630,'spell_leeching_swarm_aura'),
 (68084,'spell_clear_valkyr_touch'),
+(68614,'spell_irresistible_cologne_spill_aura'),
+(68644,'spell_valentine_boss_validate_area'),
+(68645,'spell_rocket_pack'),
 (68646,'spell_leeching_swarm_aura'),
 (68647,'spell_leeching_swarm_aura'),
+(68721,'spell_rocket_pack_periodic'),
 (68786,'spell_permafrost_aura'),
+(68798,'spell_alluring_perfume_spill_aura'),
 (68839,'spell_corrupt_soul_aura'),
 (68861,'spell_consume_soul'),
 (68870,'spell_soulstorm_visual_aura'),
 (68871,'spell_wailing_souls'),
 (68875,'spell_wailing_souls_aura'),
 (68876,'spell_wailing_souls_aura'),
+(68965,'spell_lingering_fumes_targetting'),
+(68966,'spell_valentine_trigger_vial_a'),
 (68987,'spell_pursuit'),
 (69008,'spell_soulstorm_visual_aura'),
 (69012,'spell_explosive_barrage_aura'),
+(69038,'spell_valentine_trigger_vial_b'),
 (69048,'spell_mirrored_soul'),
 (69051,'spell_mirrored_soul_proc'),
 (69057,'spell_bone_spike_graveyard'),
@@ -383,12 +407,15 @@ INSERT INTO spell_scripts(Id, ScriptName) VALUES
 (69147,'spell_coldflame'),
 (69232,'spell_icy_blast'),
 (69347,'spell_necromantic_power'),
+(69402,'spell_incinerating_blast'),
 (69413,'spell_strangulating_aura'),
 (69516,'spell_summon_undead'),
 (69828,'spell_halls_of_reflection_clone'),
 (70017,'spell_gunship_cannon_fire_aura'),
+(70175,'spell_incinerating_blast'),
 (70336,'spell_permafrost_aura'),
 (70527,'spell_jainas_call'),
+(70572,'spell_grip_of_agony_aura'),
 (70636,'spell_call_of_sylvanas'),
 (70826,'spell_bone_spike_graveyard'),
 (70842,'spell_mana_barrier_aura'),
@@ -403,6 +430,8 @@ INSERT INTO spell_scripts(Id, ScriptName) VALUES
 (72088,'spell_bone_spike_graveyard'),
 (72089,'spell_bone_spike_graveyard'),
 (72180,'spell_aggro_nearest_slave'),
+(72202,'spell_blood_link'),
+(72254,'spell_mark_fallen_champion'),
 (72495,'spell_dark_fanatic_martyrdom_aura'),
 (72496,'spell_dark_fanatic_martyrdom_aura'),
 (72497,'spell_dark_fanatic_martyrdom_aura'),
@@ -430,7 +459,8 @@ INSERT INTO spell_scripts(Id, ScriptName) VALUES
 -- Priest
 INSERT INTO spell_scripts(Id, ScriptName) VALUES
 (10060,'spell_power_infusion'),
-(27827,'spell_spirit_of_redemption_heal');
+(27827,'spell_spirit_of_redemption_heal'),
+(34433,'spell_shadowfiend');
 
 -- Paladin
 INSERT INTO spell_scripts(Id, ScriptName) VALUES
@@ -524,6 +554,9 @@ INSERT INTO spell_scripts(Id, ScriptName) VALUES
 
 -- Druid
 INSERT INTO spell_scripts(Id, ScriptName) VALUES
+(5215,'spell_stealth'),
+(6783,'spell_stealth'),
+(9913,'spell_stealth'),
 (8936,'spell_regrowth'),
 (8938,'spell_regrowth'),
 (8939,'spell_regrowth'),
@@ -539,6 +572,13 @@ INSERT INTO spell_scripts(Id, ScriptName) VALUES
 
 -- Rogue
 INSERT INTO spell_scripts(Id, ScriptName) VALUES
+(1784,'spell_stealth'),
+(1785,'spell_stealth'),
+(1786,'spell_stealth'),
+(1787,'spell_stealth'),
+(1856,'spell_vanish'),
+(1857,'spell_vanish'),
+(26889,'spell_vanish'),
 (14185,'spell_preparation');
 
 -- Shaman
