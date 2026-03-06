@@ -838,11 +838,12 @@ class MovementInfo
 {
     public:
         MovementInfo() : moveFlags(MOVEFLAG_NONE), moveFlags2(MOVEFLAG2_NONE), ctime(0), stime(0),
-            t_time(0), t_seat(-1), t_time2(0), s_pitch(0.0f), fallTime(0), u_unk1(0.0f) {}
+            t_time(0), t_seat(-1), t_time2(0), s_pitch(0.0f), fallTime(0), stepUpStartElevation(0.0f) {}
 
         // Read/Write methods
         void Read(ByteBuffer& data);
         void Write(ByteBuffer& data) const;
+        uint32 GetSerializedSize() const;
 
         // Movement flags manipulations
         void AddMovementFlag(MovementFlags f) { moveFlags |= f; }
@@ -852,6 +853,7 @@ class MovementInfo
         void SetMovementFlags(MovementFlags f) { moveFlags = f; }
         MovementFlags2 GetMovementFlags2() const { return MovementFlags2(moveFlags2); }
         void AddMovementFlags2(MovementFlags2 f) { moveFlags2 |= f; }
+        bool HasMovementFlag(MovementFlags2 f) const { return (moveFlags2 & f) != 0; }
 
         // Deduce speed type by current movement flags:
         inline UnitMoveType GetSpeedType() const { return GetSpeedType(MovementFlags(moveFlags)); }
@@ -932,7 +934,7 @@ class MovementInfo
         // jumping
         JumpInfo jump;
         // spline
-        float    u_unk1;
+        float    stepUpStartElevation; // sent by client when colliding and moving over tall obstacles, likely to avoid moving into terrain visually
 };
 
 inline ByteBuffer& operator<< (ByteBuffer& buf, MovementInfo const& mi)

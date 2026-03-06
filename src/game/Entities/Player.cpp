@@ -2280,6 +2280,9 @@ bool Player::TeleportTo(uint32 mapid, float x, float y, float z, float orientati
         // near teleport, triggering send MSG_MOVE_TELEPORT_ACK from client at landing
         if (!GetSession()->PlayerLogout())
             SendTeleportPacket(x, y, z, orientation, currentTransport);
+
+        if (Loot* loot = sLootMgr.GetLoot(this))
+            loot->Release(this);
     }
     else
     {
@@ -2354,6 +2357,9 @@ bool Player::TeleportTo(uint32 mapid, float x, float y, float z, float orientati
                 GetSession()->SendPacket(data);
             }
 
+            if (Loot* loot = sLootMgr.GetLoot(this))
+                loot->Release(this);
+
             // remove from old map now
             if (oldmap)
                 oldmap->Remove(this, false);
@@ -2404,6 +2410,7 @@ bool Player::TeleportTo(uint32 mapid, float x, float y, float z, float orientati
         else                                                // !map->CanEnter(this)
             return false;
     }
+
     return true;
 }
 
@@ -3017,6 +3024,7 @@ void Player::GiveLevel(uint32 level)
     if (level == GetLevel())
         return;
 
+    uint32 oldLevel = GetLevel();
     uint32 plClass = getClass();
 
     PlayerLevelInfo info;
@@ -3081,8 +3089,11 @@ void Player::GiveLevel(uint32 level)
     if (Pet* pet = GetPet())
         pet->SynchronizeLevelWithOwner();
 
-    if (MailLevelReward const* mailReward = sObjectMgr.GetMailLevelReward(level, getRaceMask()))
-        MailDraft(mailReward->mailTemplateId).SendMailTo(this, MailSender(MAIL_CREATURE, mailReward->senderEntry));
+    for (uint32 curLevel = oldLevel + 1; curLevel <= level; ++curLevel)
+    {
+        if (MailLevelReward const* mailReward = sObjectMgr.GetMailLevelReward(curLevel, getRaceMask()))
+            MailDraft(mailReward->mailTemplateId).SendMailTo(this, MailSender(MAIL_CREATURE, mailReward->senderEntry));
+    }
 
     GetAchievementMgr().UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_REACH_LEVEL);
 #ifdef BUILD_DEPRECATED_PLAYERBOT
@@ -4519,34 +4530,56 @@ TrainerSpellState Player::GetTrainerSpellState(TrainerSpell const* trainer_spell
     if (!trainer_spell)
         return TRAINER_SPELL_RED;
 
-    if (!trainer_spell->learnedSpell)
-        return TRAINER_SPELL_RED;
-
     // known spell
-    if (HasSpell(trainer_spell->learnedSpell))
+    if (HasSpell(trainer_spell->spell))
         return TRAINER_SPELL_GRAY;
 
     // check race/class requirement
-    if (!IsSpellFitByClassAndRace(trainer_spell->learnedSpell))
+    if (!IsSpellFitByClassAndRace(trainer_spell->spell))
         return TRAINER_SPELL_RED;
 
-    bool prof = SpellMgr::IsProfessionSpell(trainer_spell->learnedSpell);
+    bool prof = SpellMgr::IsProfessionSpell(trainer_spell->spell);
 
     // check level requirement
     if (!prof || GetSession()->GetSecurity() < AccountTypes(sWorld.getConfig(CONFIG_UINT32_TRADE_SKILL_GMIGNORE_LEVEL)))
         if (GetLevel() < reqLevel)
             return TRAINER_SPELL_RED;
-
-    if (SpellChainNode const* spell_chain = sSpellMgr.GetSpellChainNode(trainer_spell->learnedSpell))
+    
+    bool hasLearnSpellEffect = trainer_spell->learnedSpell.size() > 1;
+    bool knowsAllLearnedSpells = true;
+    for (uint32 learnedSpell : trainer_spell->learnedSpell)
     {
-        // check prev.rank requirement
-        if (spell_chain->prev && !HasSpell(spell_chain->prev))
-            return TRAINER_SPELL_RED;
+        if (trainer_spell->spell != learnedSpell && !HasSpell(learnedSpell))
+            knowsAllLearnedSpells = false;
 
-        // check additional spell requirement
-        if (spell_chain->req && !HasSpell(spell_chain->req))
-            return TRAINER_SPELL_RED;
+        if (SpellChainNode const* spell_chain = sSpellMgr.GetSpellChainNode(learnedSpell))
+        {
+            // check prev.rank requirement
+            if (spell_chain->prev && !HasSpell(spell_chain->prev))
+                return TRAINER_SPELL_RED;
+
+            // check additional spell requirement
+            if (spell_chain->req && !HasSpell(spell_chain->req) &&
+                std::find(trainer_spell->learnedSpell.begin(), trainer_spell->learnedSpell.end(), spell_chain->req) == trainer_spell->learnedSpell.end())
+                return TRAINER_SPELL_RED;
+        }
+
+            // exist, already checked at loading
+        SpellEntry const* spell = sSpellTemplate.LookupEntry<SpellEntry>(learnedSpell);
+
+        // secondary prof. or not prof. spell
+        uint32 skill = spell->EffectMiscValue[1];
+
+        if (spell->Effect[1] != SPELL_EFFECT_SKILL || !IsPrimaryProfessionSkill(skill))
+            continue;
+
+        // check primary prof. limit
+        if (sSpellMgr.IsPrimaryProfessionFirstRankSpell(spell->Id) && GetFreePrimaryProfessionPoints() == 0)
+            return TRAINER_SPELL_GREEN_DISABLED;
     }
+
+    if (hasLearnSpellEffect && knowsAllLearnedSpells)
+        return TRAINER_SPELL_GRAY;
 
     // check skill requirement
     if (!prof || GetSession()->GetSecurity() < AccountTypes(sWorld.getConfig(CONFIG_UINT32_TRADE_SKILL_GMIGNORE_SKILL)))
@@ -4557,19 +4590,6 @@ TrainerSpellState Player::GetTrainerSpellState(TrainerSpell const* trainer_spell
         if (trainer_spell->reqAbility[i])
             if (!HasSpell(*trainer_spell->reqAbility[i]))
                 return TRAINER_SPELL_RED;
-
-    // exist, already checked at loading
-    SpellEntry const* spell = sSpellTemplate.LookupEntry<SpellEntry>(trainer_spell->learnedSpell);
-
-    // secondary prof. or not prof. spell
-    uint32 skill = spell->EffectMiscValue[1];
-
-    if (spell->Effect[1] != SPELL_EFFECT_SKILL || !IsPrimaryProfessionSkill(skill))
-        return TRAINER_SPELL_GREEN;
-
-    // check primary prof. limit
-    if (sSpellMgr.IsPrimaryProfessionFirstRankSpell(spell->Id) && GetFreePrimaryProfessionPoints() == 0)
-        return TRAINER_SPELL_GREEN_DISABLED;
 
     return TRAINER_SPELL_GREEN;
 }
@@ -4892,7 +4912,7 @@ void Player::BuildPlayerRepop()
     corpse->ResetGhostTime();
 
     // set and clear other
-    SetByteValue(UNIT_FIELD_BYTES_1, UNIT_BYTES_1_OFFSET_MISC_FLAGS, UNIT_BYTE1_FLAG_ALWAYS_STAND);
+    SetAnimTier(AnimTier::Ground);
 }
 
 void Player::ResurrectPlayer(float restore_percent, bool applySickness)
@@ -4911,7 +4931,7 @@ void Player::ResurrectPlayer(float restore_percent, bool applySickness)
     // speed change, land walk
 
     // remove death flag + set aura
-    SetByteValue(UNIT_FIELD_BYTES_1, UNIT_BYTES_1_OFFSET_MISC_FLAGS, 0x00);
+    SetByteValue(UNIT_FIELD_BYTES_1, UNIT_BYTES_1_OFFSET_ANIM_TIER, 0x00);
 
     SetDeathState(ALIVE);
 
@@ -5032,7 +5052,7 @@ void Player::KillPlayer()
     // SetFlag( UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_IN_PVP );
 
     SetUInt32Value(UNIT_DYNAMIC_FLAGS, UNIT_DYNFLAG_NONE);
-    ApplyModByteFlag(PLAYER_FIELD_BYTES, 0, PLAYER_FIELD_BYTE_RELEASE_TIMER, !sMapStore.LookupEntry(GetMapId())->Instanceable() && !HasAuraType(SPELL_AURA_PREVENT_RESURRECTION));
+    ApplyModByteFlag(PLAYER_FIELD_BYTES, PLAYER_FIELD_BYTES_OFFSET_FLAGS, PLAYER_FIELD_BYTE_RELEASE_TIMER, !sMapStore.LookupEntry(GetMapId())->Instanceable() && !HasAuraType(SPELL_AURA_PREVENT_RESURRECTION));
 
     ResetDeathTimer();
 
@@ -7340,7 +7360,7 @@ bool Player::RewardHonor(Unit* uVictim, uint32 groupsize, float honor)
         return false;
 
     ObjectGuid victim_guid;
-    uint32 victim_rank = 0;
+    int32 victim_rank = 0;
 
     // need call before fields update to have chance move yesterday data to appropriate fields before today data change.
     UpdateHonorFields();
@@ -7352,7 +7372,7 @@ bool Player::RewardHonor(Unit* uVictim, uint32 groupsize, float honor)
 
         victim_guid = uVictim->GetObjectGuid();
 
-        if (uVictim->GetTypeId() == TYPEID_PLAYER)
+        if (uVictim->IsPlayer())
         {
             Player* pVictim = (Player*)uVictim;
 
@@ -7363,28 +7383,7 @@ bool Player::RewardHonor(Unit* uVictim, uint32 groupsize, float honor)
             uint32 k_level = GetLevel();
             uint32 v_level = pVictim->GetLevel();
 
-            {
-                // PLAYER_CHOSEN_TITLE VALUES DESCRIPTION
-                //  [0]      Just name
-                //  [1..14]  Alliance honor titles and player name
-                //  [15..28] Horde honor titles and player name
-                //  [29..38] Other title and player name
-                //  [39+]    Nothing
-                uint32 victim_title = pVictim->GetUInt32Value(PLAYER_CHOSEN_TITLE);
-                // Get Killer titles, CharTitlesEntry::bit_index
-                // Ranks:
-                //  title[1..14]  -> rank[5..18]
-                //  title[15..28] -> rank[5..18]
-                //  title[other]  -> 0
-                if (victim_title == 0)
-                    victim_guid.Clear();                    // Don't show HK: <rank> message, only log.
-                else if (victim_title < 15)
-                    victim_rank = victim_title + 4;
-                else if (victim_title < 29)
-                    victim_rank = victim_title - 14 + 4;
-                else
-                    victim_guid.Clear();                    // Don't show HK: <rank> message, only log.
-            }
+            victim_rank = pVictim->GetByteValue(PLAYER_FIELD_BYTES, PLAYER_FIELD_BYTES_OFFSET_LIFETIME_MAX_PVP_RANK); 
 
             uint32 k_grey = MaNGOS::XP::GetGrayLevel(k_level);
 
@@ -7410,13 +7409,36 @@ bool Player::RewardHonor(Unit* uVictim, uint32 groupsize, float honor)
         }
         else
         {
-            Creature* cVictim = (Creature*)uVictim;
+            Creature* honorableCreature = static_cast<Creature*>(uVictim);
 
-            if (!cVictim->IsRacialLeader())
-                return false;
+            if (honorableCreature->IsRacialLeader())
+                victim_rank = 19; // HK: Leader
+            else
+                victim_rank = -1; // Special unranked case for npcs in wotlk
 
-            honor = 100;                                    // ??? need more info
-            victim_rank = 19;                               // HK: Leader
+            switch (honorableCreature->GetEntry()) // currently unknown if like bg xp it scales with level of recipient
+            {
+                case 3057: // Cairne Bloodhoof
+                    honor = 2000;
+                    break;
+                case 10181: // Lady Sylvanas Windrunner
+                    honor = 2700;
+                    break;
+                case 31125: // Archavon
+                case 33993: // Emalon
+                case 35013: // Koralon
+                case 38433: // Toravon
+                    honor = 4200; // WIP
+                    break;
+                default: // TODO: More research
+                    if (honorableCreature->IsRacialLeader())
+                        honor = 2500;
+                    else
+                        return false;
+                    break;
+            }
+
+            honor = std::round(float(honor) / groupsize);
         }
     }
 
@@ -7439,7 +7461,7 @@ bool Player::RewardHonor(Unit* uVictim, uint32 groupsize, float honor)
     WorldPacket data(SMSG_PVP_CREDIT, 4 + 8 + 4);
     data << uint32(honor);
     data << ObjectGuid(victim_guid);
-    data << uint32(victim_rank);
+    data << int32(victim_rank);
     GetSession()->SendPacket(data);
 
     // add honor points
@@ -9945,7 +9967,7 @@ bool Player::HasItemOrGemWithLimitCategoryEquipped(uint32 limitCategory, uint32 
     return false;
 }
 
-InventoryResult Player::_CanTakeMoreSimilarItems(uint32 entry, uint32 count, Item* pItem, uint32* no_space_count, uint32* itemLimitCategory /*= NULL*/) const
+InventoryResult Player::_CanTakeMoreSimilarItems(uint32 entry, uint32 count, Item* pItem, uint32* no_space_count, uint32* itemLimitedByLimitCategory /*= NULL*/) const
 {
     ItemPrototype const* pProto = ObjectMgr::GetItemPrototype(entry);
     if (!pProto)
@@ -9987,8 +10009,8 @@ InventoryResult Player::_CanTakeMoreSimilarItems(uint32 entry, uint32 count, Ite
             {
                 if (no_space_count)
                     *no_space_count = count + curcount - limitEntry->maxCount;
-                if (itemLimitCategory)
-                    *itemLimitCategory = pProto->ItemLimitCategory;
+                if (itemLimitedByLimitCategory)
+                    *itemLimitedByLimitCategory = pProto->ItemId;
                 return EQUIP_ERR_ITEM_MAX_LIMIT_CATEGORY_COUNT_EXCEEDED_IS;
             }
         }
@@ -10646,7 +10668,7 @@ InventoryResult Player::_CanStoreItem(uint8 bag, uint8 slot, ItemPosCountVec& de
 }
 
 //////////////////////////////////////////////////////////////////////////
-InventoryResult Player::CanStoreItems(Item** pItems, int count, uint32* itemLimitCategory) const
+InventoryResult Player::CanStoreItems(Item** pItems, int count, uint32* itemLimitedByLimitCategory) const
 {
     Item*    pItem2;
 
@@ -10733,7 +10755,7 @@ InventoryResult Player::CanStoreItems(Item** pItems, int count, uint32* itemLimi
         ItemPrototype const* pBagProto;
 
         // item is 'one item only'
-        InventoryResult res = CanTakeMoreSimilarItems(pItem, itemLimitCategory);
+        InventoryResult res = CanTakeMoreSimilarItems(pItem, itemLimitedByLimitCategory);
         if (res != EQUIP_ERR_OK)
             return res;
 
@@ -12742,6 +12764,20 @@ void Player::SendSellError(SellResult msg, Creature* pCreature, ObjectGuid itemG
     GetSession()->SendPacket(data);
 }
 
+void Player::SendOpenContainer(ObjectGuid itemGuid)
+{
+    WorldPacket data(SMSG_OPEN_CONTAINER, 8);
+    data << ObjectGuid(itemGuid);
+    GetSession()->SendPacket(data);
+}
+
+void Player::SendResetRangedCombatTimer()
+{
+    WorldPacket data(SMSG_RESET_RANGED_COMBAT_TIMER, 4);
+    data << uint32(GetFloatValue(UNIT_FIELD_RANGEDATTACKTIME));
+    GetSession()->SendPacket(data);
+}
+
 void Player::TradeCancel(bool sendback, TradeStatus status /*= TRADE_STATUS_TRADE_CANCELED*/)
 {
     if (m_trade)
@@ -14582,6 +14618,7 @@ void Player::RewardQuest(Quest const* pQuest, uint32 reward, Object* questGiver,
         SetDailyQuestStatus(quest_id);
         if (pQuest->IsDaily())
         {
+            GetAchievementMgr().StartAchievementCriteria(CriteriaStartEvent::CompleteDailyQuest);
             GetAchievementMgr().UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_COMPLETE_DAILY_QUEST, 1);
             GetAchievementMgr().UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_COMPLETE_DAILY_QUEST_DAILY, quest_id);
         }
@@ -15520,6 +15557,7 @@ void Player::KilledMonster(CreatureInfo const* cInfo, Creature const* creature)
 void Player::KilledMonsterCredit(uint32 entry, ObjectGuid guid)
 {
     uint32 addkillcount = 1;
+    GetAchievementMgr().StartTimedAchievementCriteria(CriteriaTimedEvent::KillNpc, entry);
     GetAchievementMgr().UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_KILL_CREATURE, entry, addkillcount);
 
     for (int i = 0; i < MAX_QUEST_LOG_SIZE; ++i)
@@ -17115,7 +17153,7 @@ void Player::LoadCorpse()
     {
         if (Corpse* corpse = GetCorpse())
         {
-            ApplyModByteFlag(PLAYER_FIELD_BYTES, 0, PLAYER_FIELD_BYTE_RELEASE_TIMER, corpse && !sMapStore.LookupEntry(corpse->GetMapId())->Instanceable());
+            ApplyModByteFlag(PLAYER_FIELD_BYTES, PLAYER_FIELD_BYTES_OFFSET_FLAGS, PLAYER_FIELD_BYTE_RELEASE_TIMER, corpse && !sMapStore.LookupEntry(corpse->GetMapId())->Instanceable());
 
             // [XFACTION]: Alter values update if detected crossfaction group interaction:
             if (sWorld.getConfig(CONFIG_BOOL_ALLOW_TWO_SIDE_INTERACTION_GROUP) && GetGroup())
@@ -18030,7 +18068,7 @@ void Player::SendSavedInstances()
         }
     }
 
-    // Send opcode 811. true or false means, whether you have current raid/heroic instances
+    // true or false means, whether you own the current instance
     data.Initialize(SMSG_UPDATE_INSTANCE_OWNERSHIP);
     data << uint32(hasBeenSaved);
     GetSession()->SendPacket(data);
@@ -20328,7 +20366,7 @@ void Player::OnTaxiFlightRouteProgress(const TaxiPathNodeEntry* node, const Taxi
         {
             const char* desc = (arrival ? "arrival" : "departure");
             DEBUG_FILTER_LOG(LOG_FILTER_AI_AND_MOVEGENSS, "Taxi %s event %u of node %u of path %u for player %s", desc, eventid, node->index, node->path, GetName());
-            StartEvents_Event(GetMap(), eventid, this, this, !arrival);
+            GetMap()->StartEvent(eventid, this, this, !arrival);
         }
     }
 }
@@ -21253,7 +21291,8 @@ void Player::SetPhaseMask(uint32 newPhaseMask, bool update)
     Unit::SetPhaseMask(newPhaseMask, update);
 
     if (Unit* vehicle = const_cast<Unit*>(FindRootVehicle()))
-        vehicle->SetPhaseMask(newPhaseMask, update);
+        if (vehicle != this)
+            vehicle->SetPhaseMask(newPhaseMask, update);
     GetSession()->SendSetPhaseShift(GetPhaseMask());
 
     m_pendingPhaseChange = true;
@@ -21361,7 +21400,8 @@ void Player::SendInitialPacketsBeforeAddToMap()
             if (time_t timeReset = sMapPersistentStateMgr.GetScheduler().GetResetTimeFor(GetMap()->GetId(), diff))
             {
                 uint32 timeleft = uint32(timeReset - time(nullptr));
-                SendInstanceResetWarning(GetMap()->GetId(), diff, timeleft);
+                InstancePlayerBind* instanceBind = GetBoundInstance(GetMap()->GetId(), Difficulty(GetMap()->GetDifficulty()), true);
+                SendInstanceResetWarning(GetMap()->GetId(), diff, timeleft, instanceBind, instanceBind ? instanceBind->extendState == EXTEND_STATE_EXTENDED : false);
             }
         }
     }
@@ -21471,6 +21511,8 @@ void Player::SendInitialPacketsAfterAddToMap(bool reconnect)
 
     SendAurasForTarget(this);
 
+    // TODO: add SMSG_RESUME_CAST_BAR
+
     SendEnchantmentDurations();                             // must be after add to map
     SendItemDurations();                                    // must be after add to map
 
@@ -21568,7 +21610,7 @@ void Player::SendTransferAbortedByLockStatus(MapEntry const* mapEntry, AreaLockS
     }
 }
 
-void Player::SendInstanceResetWarning(uint32 mapid, Difficulty difficulty, uint32 time) const
+void Player::SendInstanceResetWarning(uint32 mapid, Difficulty difficulty, uint32 time, bool locked, bool extended) const
 {
     // type of warning, based on the time remaining until reset
     uint32 type;
@@ -21588,8 +21630,8 @@ void Player::SendInstanceResetWarning(uint32 mapid, Difficulty difficulty, uint3
     data << uint32(time);
     if (type == RAID_INSTANCE_WELCOME)
     {
-        data << uint8(0);                                   // is your (1)
-        data << uint8(0);                                   // is extended (1), ignored if prev field is 0
+        data << uint8(locked);                              // is locked
+        data << uint8(extended);                            // is extended
     }
     GetSession()->SendPacket(data);
 }
@@ -23352,92 +23394,99 @@ void Player::learnClassLevelSpells(bool includeHighLevelQuestRewards)
 
             uint32 reqLevel = 0;
 
-            // skip wrong class/race skills
-            if (!IsSpellFitByClassAndRace(tSpell->learnedSpell, &reqLevel))
-                continue;
-
-            if (tSpell->conditionId && !sObjectMgr.IsConditionSatisfied(tSpell->conditionId, this, GetMap(), this, CONDITION_FROM_TRAINER))
-                continue;
-
-            // skip spells with first rank learned as talent (and all talents then also)
-            uint32 first_rank = sSpellMgr.GetFirstSpellInChain(tSpell->learnedSpell);
-            reqLevel = tSpell->isProvidedReqLevel ? tSpell->reqLevel : std::max(reqLevel, tSpell->reqLevel);
-            bool isValidTalent = GetTalentSpellCost(first_rank) && HasSpell(first_rank) && reqLevel <= GetLevel();
-
-            TrainerSpellState state = GetTrainerSpellState(tSpell, reqLevel);
-            if (state != TRAINER_SPELL_GREEN && !isValidTalent)
-                continue;
-
-            SpellEntry const* proto = sSpellTemplate.LookupEntry<SpellEntry>(tSpell->learnedSpell);
-            if (!proto)
-                continue;
-
-            // fix activate state for non-stackable low rank (and find next spell for !active case)
-            if (uint32 nextId = sSpellMgr.GetSpellBookSuccessorSpellId(proto->Id))
+            if (!tSpell->learnedSpell.empty())
             {
-                if (HasSpell(nextId))
+
+                for (auto learnedSpell : tSpell->learnedSpell)
                 {
-                    // high rank already known so this must !active
-                    continue;
-                }
-            }
 
-            // skip other spell families (minus a few exceptions)
-            if (proto->SpellFamilyName != family)
-            {
-                SkillLineAbilityMapBounds bounds = sSpellMgr.GetSkillLineAbilityMapBoundsBySpellId(tSpell->learnedSpell);
-                if (bounds.first == bounds.second)
-                    continue;
+                    // skip wrong class/race skills
+                    if (!IsSpellFitByClassAndRace(learnedSpell, &reqLevel))
+                        continue;
 
-                SkillLineAbilityEntry const* skillInfo = bounds.first->second;
-                if (!skillInfo)
-                    continue;
+                    if (tSpell->conditionId && !sObjectMgr.IsConditionSatisfied(tSpell->conditionId, this, GetMap(), this, CONDITION_FROM_TRAINER))
+                        continue;
 
-                switch (skillInfo->skillId)
-                {
-                case SKILL_SUBTLETY:
-                case SKILL_BEAST_MASTERY:
-                case SKILL_SURVIVAL:
-                case SKILL_DEFENSE:
-                case SKILL_DUAL_WIELD:
-                case SKILL_FERAL_COMBAT:
-                case SKILL_PROTECTION:
-                case SKILL_PLATE_MAIL:
-                case SKILL_DEMONOLOGY:
-                case SKILL_ENHANCEMENT:
-                case SKILL_MAIL:
-                case SKILL_HOLY2:
-                case SKILL_LOCKPICKING:
-                    break;
+                    // skip spells with first rank learned as talent (and all talents then also)
+                    uint32 first_rank = sSpellMgr.GetFirstSpellInChain(learnedSpell);
+                    reqLevel = tSpell->isProvidedReqLevel ? tSpell->reqLevel : std::max(reqLevel, tSpell->reqLevel);
+                    bool isValidTalent = GetTalentSpellCost(first_rank) && HasSpell(first_rank) && reqLevel <= GetLevel();
 
-                default: continue;
-                }
-            }
+                    TrainerSpellState state = GetTrainerSpellState(tSpell, reqLevel);
+                    if (state != TRAINER_SPELL_GREEN && !isValidTalent)
+                        continue;
 
-            // skip wrong class/race skills
-            if (!IsSpellFitByClassAndRace(tSpell->learnedSpell))
-                continue;
+                    SpellEntry const* proto = sSpellTemplate.LookupEntry<SpellEntry>(learnedSpell);
+                    if (!proto)
+                        continue;
 
-            // skip broken spells
-            if (!SpellMgr::IsSpellValid(proto, this, false))
-                continue;
-
-            if (tSpell->learnedSpell)
-            {
-                bool learned = false;
-                for (int j = 0; j < 3; ++j)
-                {
-                    if (proto->Effect[j] == SPELL_EFFECT_LEARN_SPELL)
+                    // fix activate state for non-stackable low rank (and find next spell for !active case)
+                    if (uint32 nextId = sSpellMgr.GetSpellBookSuccessorSpellId(proto->Id))
                     {
-                        uint32 learnedSpell = proto->EffectTriggerSpell[j];
-                        learnSpell(learnedSpell, false);
-                        learned = true;
+                        if (HasSpell(nextId))
+                        {
+                            // high rank already known so this must !active
+                            continue;
+                        }
                     }
-                }
 
-                if (!learned)
-                {
-                    learnSpell(tSpell->learnedSpell, false);
+                    // skip other spell families (minus a few exceptions)
+                    if (proto->SpellFamilyName != family)
+                    {
+                        SkillLineAbilityMapBounds bounds = sSpellMgr.GetSkillLineAbilityMapBoundsBySpellId(learnedSpell);
+                        if (bounds.first == bounds.second)
+                            continue;
+
+                        SkillLineAbilityEntry const* skillInfo = bounds.first->second;
+                        if (!skillInfo)
+                            continue;
+
+                        switch (skillInfo->skillId)
+                        {
+                            case SKILL_SUBTLETY:
+                            case SKILL_BEAST_MASTERY:
+                            case SKILL_SURVIVAL:
+                            case SKILL_DEFENSE:
+                            case SKILL_DUAL_WIELD:
+                            case SKILL_FERAL_COMBAT:
+                            case SKILL_PROTECTION:
+                            case SKILL_PLATE_MAIL:
+                            case SKILL_DEMONOLOGY:
+                            case SKILL_ENHANCEMENT:
+                            case SKILL_MAIL:
+                            case SKILL_HOLY2:
+                            case SKILL_LOCKPICKING: break;
+
+                            default: continue;
+                        }
+                    }
+
+                    // skip wrong class/race skills
+                    if (!IsSpellFitByClassAndRace(learnedSpell))
+                        continue;
+
+                    // skip broken spells
+                    if (!SpellMgr::IsSpellValid(proto, this, false))
+                        continue;
+
+                    if (learnedSpell)
+                    {
+                        bool learned = false;
+                        for (int j = 0; j < 3; ++j)
+                        {
+                            if (proto->Effect[j] == SPELL_EFFECT_LEARN_SPELL)
+                            {
+                                uint32 learnedSpell2 = proto->EffectTriggerSpell[j];
+                                learnSpell(learnedSpell2, false);
+                                learned = true;
+                            }
+                        }
+
+                        if (!learned)
+                        {
+                            learnSpell(learnedSpell, false);
+                        }
+                    }
                 }
             }
             else
@@ -23720,11 +23769,6 @@ void Player::HandleFall(MovementInfo const& movementInfo)
 void Player::UpdateAchievementCriteria(AchievementCriteriaTypes type, uint32 miscvalue1/*=0*/, uint32 miscvalue2/*=0*/, Unit* unit/*=nullptr*/, uint32 time/*=0*/)
 {
     GetAchievementMgr().UpdateAchievementCriteria(type, miscvalue1, miscvalue2, unit, time);
-}
-
-void Player::StartTimedAchievementCriteria(AchievementCriteriaTypes type, uint32 timedRequirementId, time_t startTime /*= 0*/)
-{
-    GetAchievementMgr().StartTimedAchievementCriteria(type, timedRequirementId, startTime);
 }
 
 PlayerTalent const* Player::GetKnownTalentById(int32 talentId) const
@@ -25746,4 +25790,33 @@ void Player::UpdateRangedWeaponDependantAmmoHasteAura()
             ApplyAttackTimePercentMod(RANGED_ATTACK, float(highest), true);
         SetHighestAmmoMod(highest);
     }
+}
+
+bool Player::SetStunnedByLogout(bool apply)
+{
+    if (SetStunned(apply, ObjectGuid(), 0, true))
+    {
+        // Sit down when eligible:
+        if (apply)
+        {
+            if (IsStandState())
+            {
+                if (!m_movementInfo.HasMovementFlag(MovementFlags(movementFlagsMask | MOVEFLAG_SWIMMING | MOVEFLAG_SPLINE_ENABLED)))
+                    SetStandState(UNIT_STAND_STATE_SIT);
+            }
+        }
+        // Stand up on cancel
+        else if (getStandState() == UNIT_STAND_STATE_SIT)
+            SetStandState(UNIT_STAND_STATE_STAND);
+
+        ApplyModByteFlag(PLAYER_FIELD_BYTES, PLAYER_FIELD_BYTES_OFFSET_FLAGS, PLAYER_FIELD_BYTE_LOGGING_OUT, apply);
+        return true;
+    }
+    return false;
+}
+
+void Player::SetPet(Unit* pet)
+{
+    Unit::SetPet(pet);
+    ApplyModByteFlag(PLAYER_FIELD_BYTES, PLAYER_FIELD_BYTES_OFFSET_FLAGS, PLAYER_FIELD_BYTE_CONTROLLING_PET, pet != nullptr);
 }

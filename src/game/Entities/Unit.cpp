@@ -187,7 +187,7 @@ void MovementInfo::Read(ByteBuffer& data)
 
     if (HasMovementFlag(MOVEFLAG_SPLINE_ELEVATION))
     {
-        data >> u_unk1;
+        data >> stepUpStartElevation;
     }
 }
 
@@ -232,8 +232,26 @@ void MovementInfo::Write(ByteBuffer& data) const
 
     if (HasMovementFlag(MOVEFLAG_SPLINE_ELEVATION))
     {
-        data << u_unk1;
+        data << stepUpStartElevation;
     }
+}
+
+uint32 MovementInfo::GetSerializedSize() const
+{
+    uint32 size = 30;
+    if (HasMovementFlag(MOVEFLAG_ONTRANSPORT))
+    {
+        size += t_guid.WriteAsPacked().size() + 21;
+        if (moveFlags2 & MOVEFLAG2_INTERP_MOVEMENT)
+            size += 4;
+    }
+    if ((HasMovementFlag(MovementFlags(MOVEFLAG_SWIMMING | MOVEFLAG_FLYING))) || (moveFlags2 & MOVEFLAG2_ALLOW_PITCHING))
+        size += 4;
+    if (HasMovementFlag(MOVEFLAG_FALLING))
+        size += 16;
+    if (HasMovementFlag(MOVEFLAG_SPLINE_ELEVATION))
+        size += 4;
+    return size;
 }
 
 float MovementInfo::GetOrientationInMotion(MovementFlags flags, float orientation)
@@ -568,7 +586,7 @@ void Unit::TriggerHomeEvents()
     {
         Unit* target = GetMaster();
         if (target && (!target->GetTransportInfo() || target->GetTransportInfo()->GetTransport() != this))
-            GetMotionMaster()->MoveFollow(target, PET_FOLLOW_DIST, PET_FOLLOW_ANGLE, false, IsPlayer() && !HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED));
+            AI()->RequestFollow(target);
         else if (IsLinkingEventTrigger())
             GetMap()->GetCreatureLinkingHolder()->TryFollowMaster((Creature*)this);
     }
@@ -1201,6 +1219,9 @@ void Unit::Kill(Unit* killer, Unit* victim, DamageEffectType damagetype, SpellEn
         // at original death (not at SpiritOfRedemtionTalent timeout)
         if (damagetype != INSTAKILL)
             playerVictim->SetPvPDeath(responsiblePlayer != nullptr);
+
+        // reset no death achievements
+        playerVictim->GetAchievementMgr().FailAchievementCriteria(CriteriaFailEvent::Death);
 
         // achievement stuff
         if (responsiblePlayer)
@@ -1839,6 +1860,9 @@ SpellCastResult Unit::CastSpell(SpellCastArgs& args, SpellEntry const* spellInfo
 
     if (args.IsDestinationSet())
         targets.setDestination(args.GetDestination());
+
+    if (args.IsItemTargetSet())
+        targets.setItemTarget(args.GetItemTarget());
 
     spell->SetCastItem(castItem);
     return spell->SpellStart(&targets, triggeredByAura);
@@ -6938,18 +6962,20 @@ void Unit::CasterHitTargetWithSpell(Unit* realCaster, Unit* target, SpellEntry c
             target->SetStandState(UNIT_STAND_STATE_STAND);
 
         // Hostile spell hits count as attack made against target (if detected), stealth removed at Spell::cast if spell break it
-        const bool attack = (!IsPositiveSpell(spellInfo->Id, realCaster, target) && realCaster->IsVisibleForOrDetect(target, target, false) && realCaster->CanEnterCombat() && target->CanEnterCombat());
+        const bool bypassStealthAndEndIt = spellInfo->HasAttribute(SPELL_ATTR_EX_FAILURE_BREAKS_STEALTH) && !success;
+        const bool attack = (!IsPositiveSpell(spellInfo->Id, realCaster, target) && realCaster->IsVisibleForOrDetect(target, target, false, false, true, bypassStealthAndEndIt) &&
+                             realCaster->CanEnterCombat() && target->CanEnterCombat());
 
         // Mind soothe confirmed to aggro on resist
         if (attack && (!success || !spellInfo->HasAttribute(SPELL_ATTR_EX_THREAT_ONLY_ON_MISS)) && !spellInfo->HasAttribute(SPELL_ATTR_EX_NO_THREAT))
         {
-            if (success && !spellInfo->HasAttribute(SPELL_ATTR_EX2_NOT_AN_ACTION))
+            if (success && !spellInfo->HasAttribute(SPELL_ATTR_EX2_NOT_AN_ACTION) || bypassStealthAndEndIt)
             {
                 target->RemoveAurasWithInterruptFlags(AURA_INTERRUPT_FLAG_HOSTILE_ACTION);
 
                 // caster can be detected but have stealth aura
-                if (!spellInfo->HasAttribute(SPELL_ATTR_EX_ALLOW_WHILE_STEALTHED))
-                    realCaster->RemoveSpellsCausingAura(SPELL_AURA_MOD_STEALTH);
+                if (bypassStealthAndEndIt) // all other cases are handled through AURA_INTERRUPT_FLAG_ACTION
+                    realCaster->RemoveAurasWithDispelType(DISPEL_STEALTH);
             }
 
             target->AttackedBy(realCaster);
@@ -8878,6 +8904,16 @@ float Unit::GetPPMProcChance(uint32 WeaponSpeed, float PPM) const
     if (PPM <= 0.0f)
         return 0.0f;
     return WeaponSpeed * PPM / 600.0f;                      // result is chance in percents (probability = Speed_in_sec * (PPM / 60))
+}
+
+void Unit::SetAnimTier(AnimTier tier)
+{
+    SetByteValue(UNIT_FIELD_BYTES_1, UNIT_BYTES_1_OFFSET_ANIM_TIER, (uint8)tier);
+}
+
+AnimTier Unit::GetAnimTier() const
+{
+    return AnimTier(GetByteValue(UNIT_FIELD_BYTES_1, UNIT_BYTES_1_OFFSET_ANIM_TIER));
 }
 
 bool Unit::MountEntry(uint32 templateEntry, const Aura* aura)
@@ -11241,6 +11277,15 @@ void Unit::StopMoving(bool forceSendStop /*=false*/)
     init.Stop(forceSendStop);
 }
 
+void Unit::UpdateMoving()
+{
+    Movement::MoveSplineInit init(*this);
+    Position pos = GetPosition(GetTransport());
+    init.Launch(); // no need to attach to movegen, only sending update to client
+    UpdateSplinePosition();
+    EndSpline();
+}
+
 void Unit::InterruptMoving(bool forceSendStop /*=false*/)
 {
     bool isMoving = false;
@@ -11361,28 +11406,6 @@ bool Unit::SetStunned(bool apply, ObjectGuid casterGuid, uint32 spellID, bool lo
         SetImmobilizedState(apply, true, logout);
 
         ApplyModFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_STUNNED, hasUnitState(UNIT_STAT_STUNNED | UNIT_STAT_LOGOUT_TIMER));
-        return true;
-    }
-    return false;
-}
-
-bool Unit::SetStunnedByLogout(bool apply)
-{
-    if (SetStunned(apply, ObjectGuid(), 0, true))
-    {
-        // Sit down when eligible:
-        if (apply)
-        {
-            if (IsStandState())
-            {
-                if (!m_movementInfo.HasMovementFlag(MovementFlags(movementFlagsMask | MOVEFLAG_SWIMMING | MOVEFLAG_SPLINE_ENABLED)))
-                    SetStandState(UNIT_STAND_STATE_SIT);
-            }
-        }
-        // Stand up on cancel
-        else if (getStandState() == UNIT_STAND_STATE_SIT)
-            SetStandState(UNIT_STAND_STATE_STAND);
-
         return true;
     }
     return false;
@@ -12655,6 +12678,12 @@ void Unit::UpdateSplinePosition(bool relocateOnly)
     }
 
     m_lastMoveTime = GetMap()->GetCurrentClockTime();
+
+    if (movespline->hasAnim())
+        SetAnimTier(static_cast<AnimTier>(movespline->getAnim()));
+
+    if (movespline->hasExitVoluntary())
+        m_movementInfo.AddMovementFlags2(MOVEFLAG2_UNK4);
 
     if (relocateOnly)
     {

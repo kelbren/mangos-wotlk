@@ -356,7 +356,7 @@ void BattleGroundAV::StartingEventOpenDoors()
     OpenDoorEvent(BG_EVENT_DOOR);
 
     // Players that join battleground after start are not available to get achievement.
-    StartTimedAchievement(ACHIEVEMENT_CRITERIA_TYPE_WIN_BG, BG_AV_TIMED_ACHIEV_ALTERAC_BLITZ);
+    GetBgMap()->StartEventForAllPlayersInMap(BG_AV_TIMED_ACHIEV_ALTERAC_BLITZ, nullptr);
 }
 
 void BattleGroundAV::AddPlayer(Player* player)
@@ -435,8 +435,8 @@ void BattleGroundAV::EndBattleGround(Team winner)
     // both teams get honor for completing the BG
     if (m_honorMapComplete)
     {
-        RewardHonorToTeam(m_honorMapComplete, ALLIANCE);
-        RewardHonorToTeam(m_honorMapComplete, HORDE);
+        RewardHonorToTeam(GetBonusHonorFromKill(m_honorMapComplete), ALLIANCE);
+        RewardHonorToTeam(GetBonusHonorFromKill(m_honorMapComplete), HORDE);
     }
 
     BattleGround::EndBattleGround(winner);
@@ -1000,8 +1000,6 @@ bool BattleGroundAV::CheckAchievementCriteriaMeet(uint32 criteriaId, Player cons
         case BG_AV_ACHIEV_CRIT_ALL_COUNTS_H1:
         case BG_AV_ACHIEV_CRIT_ALL_COUNTS_H2:
             return m_mineOwner[BG_AV_IRONDEEP_MINE_ID] == TEAM_INDEX_HORDE && m_mineOwner[BG_AV_COLDTOOTH_MINE_ID] == TEAM_INDEX_HORDE;
-        case BG_AV_ACHIEV_CRIT_SICKLY_GAZELLE:
-            return target->GetAreaId() == BG_AV_AREA_ID_FIELD_OF_STRIFE && target->GetTypeId() == TYPEID_PLAYER && target->IsMounted();
         case BG_AV_ACHIEV_CRIT_STORMPIKE_PERF1:
         case BG_AV_ACHIEV_CRIT_STORMPIKE_PERF2:
         case BG_AV_ACHIEV_CRIT_STORMPIKE_PERF3:

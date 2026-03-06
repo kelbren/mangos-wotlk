@@ -410,12 +410,12 @@ void WorldSession::HandleMovementOpcodes(WorldPacket& recv_data)
     // CMSG opcode has no handler in client, should not be sent to others.
     // It is sent by client when you jump and hit something on the way up,
     // thus stopping upward movement and causing you to descend sooner.
-    if (opcode == CMSG_MOVE_FALL_RESET)
+    if (opcode == CMSG_MOVE_FALL_RESET || opcode == CMSG_MOVE_CHNG_TRANSPORT)
         return;
 
     WorldPacket data(opcode, recv_data.size());
     data << mover->GetPackGUID();             // write guid
-    movementInfo.Write(data);                               // write data
+    movementInfo.Write(data);                 // write data
     mover->SendMessageToSetExcept(data, _player);
 }
 
@@ -646,6 +646,8 @@ void WorldSession::HandleMoveFlagChangeOpcode(WorldPacket& recv_data)
 {
     DEBUG_LOG("%s", recv_data.GetOpcodeName());
 
+    Opcodes opcode = recv_data.GetOpcode();
+
     ObjectGuid guid;
     uint32 counter;
     MovementInfo movementInfo;
@@ -654,7 +656,8 @@ void WorldSession::HandleMoveFlagChangeOpcode(WorldPacket& recv_data)
     recv_data >> guid.ReadAsPacked();
     recv_data >> counter;
     recv_data >> movementInfo;
-    recv_data >> isApplied;
+    if (opcode != CMSG_MOVE_GRAVITY_DISABLE_ACK && opcode != CMSG_MOVE_GRAVITY_ENABLE_ACK)
+        recv_data >> isApplied;
 
     m_anticheat->OrderAck(recv_data.GetOpcode(), counter);
 
@@ -665,17 +668,20 @@ void WorldSession::HandleMoveFlagChangeOpcode(WorldPacket& recv_data)
 
     Opcodes response = MSG_NULL_ACTION;
 
-    switch (recv_data.GetOpcode())
+    switch (opcode)
     {
         case CMSG_MOVE_HOVER_ACK: response = MSG_MOVE_HOVER; break;
         case CMSG_MOVE_FEATHER_FALL_ACK: response = MSG_MOVE_FEATHER_FALL; break;
         case CMSG_MOVE_WATER_WALK_ACK: response = MSG_MOVE_WATER_WALK; break;
         case CMSG_MOVE_SET_CAN_FLY_ACK: response = MSG_MOVE_UPDATE_CAN_FLY; break;
+        case CMSG_MOVE_GRAVITY_DISABLE_ACK: response = MSG_MOVE_GRAVITY_CHNG; break;
+        case CMSG_MOVE_GRAVITY_ENABLE_ACK: response = MSG_MOVE_GRAVITY_CHNG; break;
         default: break;
     }
 
-    WorldPacket data(response, 8);
-    data << guid.WriteAsPacked();
+    const PackedGuid packed = guid.WriteAsPacked();
+    WorldPacket data(response, packed.size() + movementInfo.GetSerializedSize());
+    data << packed;
     data << movementInfo;
     mover->SendMessageToSetExcept(data, _player);
 }
@@ -683,7 +689,7 @@ void WorldSession::HandleMoveFlagChangeOpcode(WorldPacket& recv_data)
 void WorldSession::HandleMoveRootAck(WorldPacket& recv_data)
 {
     DEBUG_LOG("WORLD: Received opcode %s", recv_data.GetOpcodeName());
-    // Pre-Wrath: broadcast root
+
     ObjectGuid guid;
     uint32 counter;
     MovementInfo movementInfo;
@@ -691,14 +697,16 @@ void WorldSession::HandleMoveRootAck(WorldPacket& recv_data)
     recv_data >> counter;
     recv_data >> movementInfo;
 
-    m_anticheat->OrderAck(recv_data.GetOpcode(), counter);
+    Opcodes opcode = recv_data.GetOpcode();
+
+    m_anticheat->OrderAck(opcode, counter);
 
     Unit* mover = _player->GetMover();
 
     if (mover->GetObjectGuid() != guid)
         return;
 
-    if (recv_data.GetOpcode() == CMSG_FORCE_MOVE_UNROOT_ACK) // unroot case
+    if (opcode == CMSG_FORCE_MOVE_UNROOT_ACK) // unroot case
     {
         if (!mover->m_movementInfo.HasMovementFlag(MOVEFLAG_ROOT))
             return;
@@ -712,8 +720,38 @@ void WorldSession::HandleMoveRootAck(WorldPacket& recv_data)
     if (!ProcessMovementInfo(movementInfo, mover, _player, recv_data))
         return;
 
-    WorldPacket data(recv_data.GetOpcode() == CMSG_FORCE_MOVE_UNROOT_ACK ? MSG_MOVE_UNROOT : MSG_MOVE_ROOT);
+    if (_player->IsExpectingChangeTransport())
+        return;
+
+    WorldPacket data(opcode == CMSG_FORCE_MOVE_UNROOT_ACK ? MSG_MOVE_UNROOT : MSG_MOVE_ROOT);
     data << guid.WriteAsPacked();
+    data << movementInfo;
+    mover->SendMessageToSetExcept(data, _player);
+}
+
+void WorldSession::HandleMoveSplineDoneOpcode(WorldPacket& recv_data)
+{
+    DEBUG_LOG("WORLD: Received opcode CMSG_MOVE_SPLINE_DONE");
+
+    ObjectGuid guid;           // used only for proper packet read
+    MovementInfo movementInfo; // used only for proper packet read
+    uint32 movementCounter;    // spline counter
+
+    Unit* mover = _player->GetMover();
+
+    recv_data >> guid.ReadAsPacked();
+    recv_data >> movementInfo;
+    recv_data >> movementCounter;
+
+    if (mover->GetObjectGuid() != guid)
+        return;
+
+    if (!_player->IsExpectingChangeTransport() || !mover->movespline || mover->movespline->GetId() != movementCounter)
+        return;
+
+    _player->SetExpectingChangeTransport(false);
+    WorldPacket data(_player->m_movementInfo.HasMovementFlag(MOVEFLAG_ROOT) ? MSG_MOVE_ROOT : MSG_MOVE_UNROOT, recv_data.size());
+    data << mover->GetPackGUID(); // write guid
     data << movementInfo;
     mover->SendMessageToSetExcept(data, _player);
 }

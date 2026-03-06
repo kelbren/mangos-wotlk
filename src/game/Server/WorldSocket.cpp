@@ -119,11 +119,11 @@ std::deque<uint32> WorldSocket::GetIncOpcodeHistory()
 }
 
 WorldSocket::WorldSocket(boost::asio::io_context& context) : AsyncSocket(context), m_lastPingTime(std::chrono::system_clock::time_point::min()), m_overSpeedPings(0),
-    m_session(nullptr), m_seed(urand()), m_loggingPackets(true)
+    m_session(nullptr), m_seed(urand()), m_loggingPackets(false)
 {
 }
 
-void WorldSocket::SendPacket(const WorldPacket& pct, bool immediate)
+void WorldSocket::SendPacket(const WorldPacket& pct)
 {
     if (IsClosed())
         return;
@@ -695,7 +695,7 @@ bool WorldSocket::HandlePing(WorldPacket& recvPacket)
 
     WorldPacket packet(SMSG_PONG, 4);
     packet << ping;
-    SendPacket(packet, true);
+    SendPacket(packet);
 
     return true;
 }

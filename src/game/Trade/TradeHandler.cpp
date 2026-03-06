@@ -45,7 +45,7 @@ void WorldSession::SendTradeStatus(TradeStatusInfo const& info) const
         case TRADE_STATUS_CLOSE_WINDOW:
             data << uint32(info.Result);                    // InventoryResult
             data << uint8(info.IsTargetResult);             // bool isTargetError; used for: EQUIP_ERR_BAG_FULL, EQUIP_ERR_CANT_CARRY_MORE_OF_THIS, EQUIP_ERR_MISSING_REAGENT, EQUIP_ERR_ITEM_MAX_LIMIT_CATEGORY_COUNT_EXCEEDED
-            data << uint32(info.ItemLimitCategoryId);       // ItemLimitCategory.dbc entry
+            data << uint32(info.ItemLimitedByLimitCategory);// when result 84 - Item Id that was limited by ItemLimitCategory.dbc
             break;
         case TRADE_STATUS_WRONG_REALM:
         case TRADE_STATUS_NOT_ON_TAPLIST:
@@ -340,7 +340,7 @@ void WorldSession::HandleAcceptTradeOpcode(WorldPacket& recvPacket)
                 return;
             }
 
-            my_spell = new Spell(_player, spellEntry, TRIGGERED_OLD_TRIGGERED);
+            my_spell = new Spell(_player, spellEntry, TRIGGERED_OLD_TRIGGERED | TRIGGERED_FORCE_COSTS);
             my_spell->SetCastItem(castItem);
             my_targets.setTradeItemTarget(_player);
             my_spell->m_targets = my_targets;
@@ -376,7 +376,7 @@ void WorldSession::HandleAcceptTradeOpcode(WorldPacket& recvPacket)
                 return;
             }
 
-            his_spell = new Spell(trader, spellEntry, TRIGGERED_OLD_TRIGGERED);
+            his_spell = new Spell(trader, spellEntry, TRIGGERED_OLD_TRIGGERED | TRIGGERED_FORCE_COSTS);
             his_spell->SetCastItem(castItem);
             his_targets.setTradeItemTarget(trader);
             his_spell->m_targets = his_targets;
@@ -403,8 +403,8 @@ void WorldSession::HandleAcceptTradeOpcode(WorldPacket& recvPacket)
 
         // test if item will fit in each inventory
         TradeStatusInfo myCanCompleteInfo, hisCanCompleteInfo;
-        hisCanCompleteInfo.Result = trader->CanStoreItems(myItems, TRADE_SLOT_TRADED_COUNT, &hisCanCompleteInfo.ItemLimitCategoryId);
-        myCanCompleteInfo.Result = _player->CanStoreItems(hisItems, TRADE_SLOT_TRADED_COUNT, &myCanCompleteInfo.ItemLimitCategoryId);
+        hisCanCompleteInfo.Result = trader->CanStoreItems(myItems, TRADE_SLOT_TRADED_COUNT, &hisCanCompleteInfo.ItemLimitedByLimitCategory);
+        myCanCompleteInfo.Result = _player->CanStoreItems(hisItems, TRADE_SLOT_TRADED_COUNT, &myCanCompleteInfo.ItemLimitedByLimitCategory);
 
         clearAcceptTradeMode(myItems, hisItems);
 

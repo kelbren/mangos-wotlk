@@ -248,7 +248,7 @@ void Map::LoadMapAndVMap(int gx, int gy)
 
 Map::Map(uint32 id, time_t expiry, uint32 InstanceId, uint8 SpawnMode)
     : i_mapEntry(sMapStore.LookupEntry(id)), i_spawnMode(SpawnMode),
-      i_id(id), i_InstanceId(InstanceId), m_unloadTimer(0), m_clientUpdateTimer(0),
+      i_id(id), i_InstanceId(InstanceId), m_unloadTimer(0), m_clientUpdateTimer(0), m_clientUpdateTick(0),
       m_VisibleDistance(DEFAULT_VISIBILITY_DISTANCE), m_persistentState(nullptr),
       m_activeNonPlayersIter(m_activeNonPlayers.end()), m_onEventNotifiedIter(m_onEventNotifiedObjects.end()),
       i_gridExpiry(expiry), m_TerrainData(sTerrainMgr.LoadTerrain(id)),
@@ -313,6 +313,21 @@ void Map::InitVisibilityDistance()
 {
     // init visibility for continents
     m_VisibleDistance = World::GetMaxVisibleDistanceOnContinents();
+}
+
+void Map::VisiblityDistanceChanged(WorldObject* obj, float oldVisibility, VisibilityDistanceType newVisiblity)
+{
+    if (oldVisibility > VISIBILITY_DISTANCE_GIGANTIC && newVisiblity != VisibilityDistanceType::Infinite)
+        m_infiniteObjects.erase(obj);
+    else if (oldVisibility >= VISIBILITY_DISTANCE_LARGE && newVisiblity < VisibilityDistanceType::Large)
+        m_largeObjects.erase(obj);
+
+    if (oldVisibility <= VISIBILITY_DISTANCE_GIGANTIC && newVisiblity == VisibilityDistanceType::Infinite)
+        m_infiniteObjects.insert(obj);
+    else if (oldVisibility < VISIBILITY_DISTANCE_LARGE && newVisiblity >= VisibilityDistanceType::Large)
+        m_largeObjects.insert(obj);
+
+    AddUpdateMovementObject(obj);
 }
 
 // Template specialization of utility methods
@@ -590,7 +605,7 @@ void Map::Add(T* obj)
     if (obj->GetVisibilityData().IsInfiniteVisibility())
         m_infiniteObjects.insert(obj);
     else if (obj->GetVisibilityData().IsLargeVisibility())
-        m_largeObjects.insert(std::make_pair(obj, obj->GetEntry()));
+        m_largeObjects.insert(obj);
 
     DEBUG_FILTER_LOG(LOG_FILTER_CREATURE_MOVES, "%s enters grid[%u,%u]", obj->GetGuidStr().c_str(), cell.GridX(), cell.GridY());
 
@@ -797,7 +812,7 @@ void Map::Update(const uint32& t_diff)
 
     m_curTime = time(nullptr);
 
-#ifdef _MSC_VER
+#ifdef _WIN32
     localtime_s(&m_curTimeTm, &m_curTime);
 #else
     localtime_r(&m_curTime, &m_curTimeTm);
@@ -1085,7 +1100,7 @@ void Map::Update(const uint32& t_diff)
         }
     }
 
-    auto visitHomeCell = [&](WorldObject* largeObj)
+    auto visitHomeCell = [&](WorldObject const* largeObj)
     {
         CellPair p = MaNGOS::ComputeCellPair(largeObj->GetPositionX(), largeObj->GetPositionY());
         Cell cell(p);
@@ -1103,7 +1118,7 @@ void Map::Update(const uint32& t_diff)
     {
         if (!m_infiniteObjects.empty())
         {
-            for (auto& infiniteObject : m_infiniteObjects)
+            for (WorldObject const* infiniteObject : m_infiniteObjects)
             {
                 visitHomeCell(infiniteObject);
             }
@@ -1111,9 +1126,8 @@ void Map::Update(const uint32& t_diff)
 
         if (!m_largeObjects.empty())
         {
-            for (auto& largeObjData : m_largeObjects)
+            for (WorldObject const* largeObj : m_largeObjects)
             {
-                WorldObject* largeObj = largeObjData.first;
                 visitHomeCell(largeObj);
             }
         }
@@ -1275,7 +1289,7 @@ void Map::Remove(T* obj, bool remove)
     if (obj->GetVisibilityData().IsInfiniteVisibility())
         m_infiniteObjects.erase(obj);
     else if (obj->GetVisibilityData().IsLargeVisibility())
-        m_largeObjects.erase(std::make_pair(obj, obj->GetEntry()));
+        m_largeObjects.erase(obj);
 
     if (remove)
         obj->CleanupsBeforeDelete();
@@ -2431,7 +2445,10 @@ void DungeonMap::UnloadAll(bool pForce)
 void DungeonMap::SendResetWarnings(uint32 timeLeft) const
 {
     for (const auto& itr : m_mapRefManager)
-        itr.getSource()->SendInstanceResetWarning(GetId(), itr.getSource()->GetDifficulty(IsRaid()), timeLeft);
+    {
+        InstancePlayerBind* instanceBind = itr.getSource()->GetBoundInstance(GetId(), Difficulty(GetDifficulty()), true);
+        itr.getSource()->SendInstanceResetWarning(GetId(), itr.getSource()->GetDifficulty(IsRaid()), timeLeft, instanceBind, instanceBind ? instanceBind->extendState == EXTEND_STATE_EXTENDED : false);
+    }
 }
 
 void DungeonMap::SetResetSchedule(bool on)
@@ -2567,6 +2584,60 @@ bool Map::CanEnter(Player* player)
         return false;
 
     return true;
+}
+
+void Map::StartEventForAllPlayersInMap(uint32 eventId, Object* target)
+{
+    for (auto& playerRef : GetPlayers())
+    {
+        StartEvent(eventId, playerRef.getSource(), target);
+    }
+}
+
+bool Map::StartEvent(uint32 eventId, Object* source, Object* target, bool isStart)
+{
+    MANGOS_ASSERT(source);
+
+    if (source->IsPlayer())
+    {
+        static_cast<Player*>(source)->GetAchievementMgr().StartAchievementCriteria(CriteriaStartEvent::SendEvent, eventId);
+        static_cast<Player*>(source)->GetAchievementMgr().StartTimedAchievementCriteria(CriteriaTimedEvent::SendEvent, eventId);
+    }
+
+    // Handle SD2 script
+    if (sScriptDevAIMgr.OnProcessEvent(eventId, source, target, isStart))
+        return true;
+
+    // Handle PvP Calls
+    if (source->IsGameObject() || source->IsUnit())
+    {
+        BattleGround* bg = nullptr;
+        OutdoorPvP* opvp = nullptr;
+        uint32 zoneId = 0;
+        if (source->IsPlayer())
+            zoneId = static_cast<Player*>(source)->GetCachedZoneId();
+        else
+            zoneId = static_cast<WorldObject*>(source)->GetZoneId();
+
+        if (IsBattleGroundOrArena())
+            bg = static_cast<BattleGroundMap*>(this)->GetBG();
+        else // Use the go, because GOs don't move
+            opvp = sOutdoorPvPMgr.GetScript(zoneId);
+
+        if (bg && bg->HandleEvent(eventId, source, target))
+            return true;
+
+        if (opvp && opvp->HandleEvent(eventId, source, target))
+            return true;
+    }
+
+    Map::ScriptExecutionParam execParam = Map::SCRIPT_EXEC_PARAM_UNIQUE_BY_SOURCE_TARGET;
+    if (source->isType(TYPEMASK_CREATURE_OR_GAMEOBJECT))
+        execParam = Map::SCRIPT_EXEC_PARAM_UNIQUE_BY_SOURCE;
+    else if (target && target->isType(TYPEMASK_CREATURE_OR_GAMEOBJECT))
+        execParam = Map::SCRIPT_EXEC_PARAM_UNIQUE_BY_TARGET;
+
+    return ScriptsStart(SCRIPT_TYPE_EVENT, eventId, source, target, execParam);
 }
 
 /// Put scripts in the execution queue
@@ -2840,12 +2911,12 @@ void Map::UpdateVisibility(UpdateDataMapType& update_players)
 
     if (m_clientUpdateTick % 6 == 0) // every 2400ms update vis on large and gigantic objects
     {
-        for (auto& largeObj : m_largeObjects)
+        for (WorldObject* largeObj : m_largeObjects)
         {
-            if (visited.find(largeObj.first) == visited.end())
+            if (visited.find(largeObj) == visited.end())
             {
-                largeObj.first->UpdateVisibility(update_players);
-                visited.insert(largeObj.first);
+                largeObj->UpdateVisibility(update_players);
+                visited.insert(largeObj);
             }
         }
     }

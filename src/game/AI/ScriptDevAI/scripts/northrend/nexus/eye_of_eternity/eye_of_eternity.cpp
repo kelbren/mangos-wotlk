@@ -50,7 +50,7 @@ void instance_eye_of_eternity::OnCreatureCreate(Creature* creature)
         case NPC_LARGE_TRIGGER:
         case NPC_ALEXSTRASZA_INVIS:
             if (creature->GetEntry() == NPC_ALEXSTRASZA)
-                creature->SetByteFlag(UNIT_FIELD_BYTES_1, 3, UNIT_BYTE1_FLAG_REAL_FLY_ANIM);
+                creature->SetAnimTier(AnimTier::Fly);
             m_npcEntryGuidStore[creature->GetEntry()] = creature->GetObjectGuid();
             break;
         case NPC_NEXUS_LORD:
@@ -106,7 +106,7 @@ void instance_eye_of_eternity::SetData(uint32 type, uint32 data)
     if (data == IN_PROGRESS)
     {
         // Portal and iris despawn handled in DB
-        DoStartTimedAchievement(ACHIEVEMENT_CRITERIA_TYPE_KILL_CREATURE, ACHIEV_START_MALYGOS_ID);
+        instance->StartEventForAllPlayersInMap(ACHIEV_START_MALYGOS_ID, nullptr);
     }
     else if (data == FAIL)
     {

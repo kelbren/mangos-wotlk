@@ -24,7 +24,7 @@ CREATE TABLE `db_version` (
   `version` varchar(120) DEFAULT NULL,
   `creature_ai_version` varchar(120) DEFAULT NULL,
   `cache_id` int(10) DEFAULT '0',
-  `required_14092_01_mangos_proc_cooldown` bit(1) DEFAULT NULL
+  `required_14098_01_mangos_wmogroupgen` bit(1) DEFAULT NULL
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8 ROW_FORMAT=DYNAMIC COMMENT='Used DB version notes';
 
 --
@@ -188,6 +188,7 @@ CREATE TABLE `achievement_criteria_requirement` (
   `type` tinyint(3) unsigned NOT NULL DEFAULT '0',
   `value1` mediumint(8) unsigned NOT NULL DEFAULT '0',
   `value2` mediumint(8) unsigned NOT NULL DEFAULT '0',
+  `ScriptName` char(64) DEFAULT NULL,
   PRIMARY KEY (`criteria_id`,`type`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8 ROW_FORMAT=DYNAMIC COMMENT='Achievment system';
 
@@ -1025,6 +1026,7 @@ CREATE TABLE `creature_zone` (
   `Guid` int unsigned NOT NULL AUTO_INCREMENT COMMENT 'Global Unique Identifier',
   `ZoneId` mediumint unsigned NOT NULL DEFAULT '0' COMMENT 'Zone Identifier',
   `AreaId` mediumint unsigned NOT NULL DEFAULT '0' COMMENT 'Area Identifier',
+  `WmoGroupId` INT DEFAULT 0,
   PRIMARY KEY(`Guid`)
 );
 
@@ -2279,6 +2281,7 @@ CREATE TABLE `gameobject_zone` (
   `Guid` int unsigned NOT NULL AUTO_INCREMENT COMMENT 'Global Unique Identifier',
   `ZoneId` mediumint unsigned NOT NULL DEFAULT '0' COMMENT 'Zone Identifier',
   `AreaId` mediumint unsigned NOT NULL DEFAULT '0' COMMENT 'Area Identifier',
+  `WmoGroupId` INT DEFAULT 0,
   PRIMARY KEY(`Guid`)
 );
 
@@ -2387,8 +2390,8 @@ CREATE TABLE `gameobject_template` (
   `displayId` mediumint(8) unsigned NOT NULL DEFAULT '0',
   `name` varchar(100) NOT NULL DEFAULT '',
   `IconName` varchar(100) NOT NULL DEFAULT '',
-  `castBarCaption` varchar(100) NOT NULL DEFAULT '',
-  `unk1` varchar(100) NOT NULL DEFAULT '',
+  `OpeningText` varchar(100) NOT NULL DEFAULT '',
+  `ClosingText` varchar(100) NOT NULL DEFAULT '',
   `faction` smallint(5) unsigned NOT NULL DEFAULT '0',
   `flags` int(10) unsigned NOT NULL DEFAULT '0',
   `ExtraFlags` int(10) unsigned NOT NULL DEFAULT '0',
@@ -3818,22 +3821,30 @@ UNLOCK TABLES;
 DROP TABLE IF EXISTS `locales_gameobject`;
 CREATE TABLE `locales_gameobject` (
   `entry` mediumint(8) unsigned NOT NULL DEFAULT '0',
-  `name_loc1` varchar(100) NOT NULL DEFAULT '',
-  `name_loc2` varchar(100) NOT NULL DEFAULT '',
-  `name_loc3` varchar(100) NOT NULL DEFAULT '',
-  `name_loc4` varchar(100) NOT NULL DEFAULT '',
-  `name_loc5` varchar(100) NOT NULL DEFAULT '',
-  `name_loc6` varchar(100) NOT NULL DEFAULT '',
-  `name_loc7` varchar(100) NOT NULL DEFAULT '',
-  `name_loc8` varchar(100) NOT NULL DEFAULT '',
-  `castbarcaption_loc1` varchar(100) NOT NULL DEFAULT '',
-  `castbarcaption_loc2` varchar(100) NOT NULL DEFAULT '',
-  `castbarcaption_loc3` varchar(100) NOT NULL DEFAULT '',
-  `castbarcaption_loc4` varchar(100) NOT NULL DEFAULT '',
-  `castbarcaption_loc5` varchar(100) NOT NULL DEFAULT '',
-  `castbarcaption_loc6` varchar(100) NOT NULL DEFAULT '',
-  `castbarcaption_loc7` varchar(100) NOT NULL DEFAULT '',
-  `castbarcaption_loc8` varchar(100) NOT NULL DEFAULT '',
+  `name_loc1` varchar(100),
+  `name_loc2` varchar(100),
+  `name_loc3` varchar(100),
+  `name_loc4` varchar(100),
+  `name_loc5` varchar(100),
+  `name_loc6` varchar(100),
+  `name_loc7` varchar(100),
+  `name_loc8` varchar(100),
+  `opening_text_loc1` varchar(100),
+  `opening_text_loc2` varchar(100),
+  `opening_text_loc3` varchar(100),
+  `opening_text_loc4` varchar(100),
+  `opening_text_loc5` varchar(100),
+  `opening_text_loc6` varchar(100),
+  `opening_text_loc7` varchar(100),
+  `opening_text_loc8` varchar(100),
+  `closing_text_loc1` varchar(100),
+  `closing_text_loc2` varchar(100),
+  `closing_text_loc3` varchar(100),
+  `closing_text_loc4` varchar(100),
+  `closing_text_loc5` varchar(100),
+  `closing_text_loc6` varchar(100),
+  `closing_text_loc7` varchar(100),
+  `closing_text_loc8` varchar(100),
   PRIMARY KEY (`entry`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
 
@@ -20027,6 +20038,7 @@ CREATE TABLE `vehicle_accessory` (
   `vehicle_entry` int(10) unsigned NOT NULL COMMENT 'entry of the npc who has some accessory as vehicle',
   `seat` mediumint(8) unsigned NOT NULL COMMENT 'onto which seat shall the passenger be boarded',
   `accessory_entry` int(10) unsigned NOT NULL COMMENT 'entry of the passenger that is to be boarded',
+  `RideSpellId` int(10) unsigned NOT NULL COMMENT 'spell id to be used for riding',
   `comment` varchar(255) NOT NULL,
   PRIMARY KEY (`vehicle_entry`,`seat`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8 ROW_FORMAT=DYNAMIC COMMENT='Vehicle Accessory (passengers that are auto-boarded onto a vehicle)';
